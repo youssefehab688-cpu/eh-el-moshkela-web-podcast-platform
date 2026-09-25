@@ -1,62 +1,30 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useRef } from 'react';
 import Navbar from '@/components/Navbar';
 import Player from '@/components/Player';
-import { supabase } from '@/lib/supabase';
-import { usePlayerStore } from '@/store/usePlayerStore';
 import { DAILY_QUOTES, QuoteItem } from '@/data/quotes';
-import { Episode } from '@/types';
 import { toPng } from 'html-to-image';
-import { Play, Share2, Download, Sparkles, Filter } from 'lucide-react';
+import { Share2, Download, Sparkles, Filter, Copy, Check } from 'lucide-react';
 
 const AUTHORS = ['الكل', 'د. محمد الغليظ', 'د. أمير منير', 'م. ياسر ممدوح'];
 
 export default function QuotesPage() {
-  const router = useRouter();
-  const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [selectedAuthor, setSelectedAuthor] = useState('الكل');
   const [activeCardQuote, setActiveCardQuote] = useState<QuoteItem | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-
-  useEffect(() => {
-    async function loadEpisodes() {
-      const { data } = await supabase.from('episodes').select('*');
-      if (data) setEpisodes(data);
-    }
-    loadEpisodes();
-  }, []);
 
   const filteredQuotes = selectedAuthor === 'الكل'
     ? DAILY_QUOTES
     : DAILY_QUOTES.filter((q) => q.author === selectedAuthor);
 
-  const handlePlayQuote = (quoteItem: QuoteItem) => {
-    const matched = episodes.find((e) => {
-      const isSameProg = e.program === quoteItem.program;
-      const isSameSeason = Number(e.season) === Number(quoteItem.season);
-      const isSameEpNum = Number(e.episode_number) === Number(quoteItem.episodeNumber);
-      return (isSameProg && isSameSeason && isSameEpNum) || (quoteItem.youtubeId && e.youtube_video_id === quoteItem.youtubeId);
-    });
-
-    // إيقاف المشغل المصغر
-    usePlayerStore.setState({ currentEpisode: null, isPlaying: false });
-
-    if (matched) {
-      router.push(`/episodes/${matched.slug || matched.id}?t=${quoteItem.seekSeconds}`);
-    } else {
-      usePlayerStore.getState().playEpisode({
-        id: quoteItem.id,
-        title: quoteItem.titleHint,
-        youtube_video_id: quoteItem.youtubeId || 'Kionl7cyGfM',
-        season: quoteItem.season,
-        episode_number: quoteItem.episodeNumber,
-        program: quoteItem.program,
-        initialSeekTime: quoteItem.seekSeconds,
-      } as any, 'video');
-    }
+  const handleCopy = (quoteItem: QuoteItem) => {
+    const text = `«${quoteItem.quote}»\n— ${quoteItem.author}`;
+    navigator.clipboard.writeText(text);
+    setCopiedId(quoteItem.id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const downloadCard = async () => {
@@ -89,7 +57,7 @@ export default function QuotesPage() {
             >
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-amber-400 tracking-wider">إيه المشكلة؟ وعالـمغرب</span>
-                <span className="text-[10px] text-zinc-500 font-mono">[{activeCardQuote.timeFormatted}]</span>
+                <span className="text-[10px] text-zinc-400 px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800">{activeCardQuote.topic}</span>
               </div>
 
               <p className="text-sm sm:text-base font-bold text-white leading-relaxed my-auto">
@@ -126,13 +94,13 @@ export default function QuotesPage() {
         <div className="flex flex-col gap-2 pb-6 border-b border-zinc-800">
           <div className="inline-flex items-center gap-2 text-xs font-bold text-amber-400">
             <Sparkles className="w-4 h-4" />
-            <span>بنك الفوائد والاقتباسات الموثقة</span>
+            <span>بنك الفوائد والاقتباسات</span>
           </div>
           <h1 className="text-xl sm:text-3xl font-black text-white">
-            جواهر الكلمات من حلقات البودكاست
+            جواهر الكلمات والمعاني
           </h1>
           <p className="text-xs sm:text-sm text-zinc-400 max-w-2xl">
-            اقتباسات منتقاة بعناية مربوطة بالثانية الدقيقة داخل الحلقة، لتستمع للمعنى في سياقه الأصلي فوراً أو تشاركه ككارت أنيق.
+            مجموعة منتقاة من الفوائد التربوية والفكرية من حلقات البودكاست لمشاركتها كصور أو نصوص.
           </p>
         </div>
 
@@ -162,32 +130,29 @@ export default function QuotesPage() {
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="font-bold text-amber-400">{q.author}</span>
-                  <span className="font-mono text-zinc-500">[{q.timeFormatted}]</span>
+                  <span className="text-[10px] text-zinc-500 px-2 py-0.5 rounded-full bg-zinc-950 border border-zinc-800">{q.topic}</span>
                 </div>
                 <p className="text-xs sm:text-sm text-zinc-200 font-medium leading-relaxed">
                   «{q.quote}»
                 </p>
               </div>
 
-              <div className="flex flex-col gap-3 pt-3 border-t border-zinc-800/60">
-                <span className="text-[10px] text-zinc-500 truncate">{q.titleHint}</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handlePlayQuote(q)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-black text-xs transition-all shadow active:scale-95"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>استمع للمقطع</span>
-                  </button>
+              <div className="flex items-center justify-between pt-3 border-t border-zinc-800/60">
+                <button
+                  onClick={() => handleCopy(q)}
+                  className="flex items-center gap-1.5 text-xs font-bold text-zinc-400 hover:text-white transition-colors"
+                >
+                  {copiedId === q.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedId === q.id ? 'تم النسخ!' : 'نسخ النص'}</span>
+                </button>
 
-                  <button
-                    onClick={() => setActiveCardQuote(q)}
-                    title="تحويل لصورة للمشاركة"
-                    className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-amber-400 transition-colors"
-                  >
-                    <Share2 className="w-4 h-4" />
-                  </button>
-                </div>
+                <button
+                  onClick={() => setActiveCardQuote(q)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-400/10 hover:bg-amber-400/20 text-amber-400 text-xs font-bold transition-colors border border-amber-400/20"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>مشاركة كصورة</span>
+                </button>
               </div>
             </div>
           ))}

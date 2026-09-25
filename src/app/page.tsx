@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Episode } from '@/types';
 import Navbar from '@/components/Navbar';
@@ -12,17 +11,8 @@ import { DAILY_QUOTES, QuoteItem } from '@/data/quotes';
 import { 
   Search, X, Radio, Moon, 
   Layers, CheckCircle2, RotateCcw, Play, Headphones, 
-  Sparkles, ArrowDown, Folder, Clock, History, Compass, Quote
+  Sparkles, ArrowDown, Folder, Clock, History, Compass, Quote, Copy, Check
 } from 'lucide-react';
-
-const TOPICS = [
-  'الكل',
-  'إيمانيات وتزكية',
-  'علاقات وزواج',
-  'تطوير وعادات',
-  'معاملات وأموال',
-  'شبهات وأسئلة'
-];
 
 const CURATED_PATHS = [
   { id: 'path-faith', title: 'مسار التوبة وترويض النفس', query: 'توبة', icon: '🌱' },
@@ -48,14 +38,15 @@ function formatMinutes(seconds: number) {
 }
 
 export default function HomePage() {
-  const router = useRouter();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProgram, setSelectedProgram] = useState<'all' | 'eh-el-moshkla' | 'ala-el-maghreb'>('all');
   const [selectedSeason, setSelectedSeason] = useState<number | 'all'>('all');
-  const [selectedTopic, setSelectedTopic] = useState<string>('الكل');
+  const [copiedQuote, setCopiedQuote] = useState(false);
+
+  const [todayQuote, setTodayQuote] = useState<QuoteItem>(DAILY_QUOTES[0]);
 
   const [lastPlayed, setLastPlayed] = useState<{
     episode: Episode;
@@ -66,6 +57,9 @@ export default function HomePage() {
   const { setPlaylist, playEpisode } = usePlayerStore();
 
   useEffect(() => {
+    const day = new Date().getDate();
+    setTodayQuote(DAILY_QUOTES[day % DAILY_QUOTES.length]);
+
     try {
       const saved = localStorage.getItem('eh_el_moshkla_last_played');
       if (saved) {
@@ -107,14 +101,12 @@ export default function HomePage() {
     fetchEpisodes();
   }, [setPlaylist]);
 
-  const todayQuote: QuoteItem = useMemo(() => {
-    if (lastPlayed?.episode?.topic) {
-      const matched = DAILY_QUOTES.find((q) => q.topic === lastPlayed.episode.topic);
-      if (matched) return matched;
-    }
-    const day = new Date().getDate();
-    return DAILY_QUOTES[day % DAILY_QUOTES.length];
-  }, [lastPlayed]);
+  const handleCopyQuote = () => {
+    const textToCopy = `«${todayQuote.quote}»\n— ${todayQuote.author} (بودكاست إيه المشكلة وعالـمغرب)`;
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedQuote(true);
+    setTimeout(() => setCopiedQuote(false), 2000);
+  };
 
   const availableSeasons = useMemo(() => {
     if (selectedProgram === 'eh-el-moshkla') return [1, 2, 3, 4, 5, 6];
@@ -128,32 +120,28 @@ export default function HomePage() {
     return episodes.filter((ep) => {
       if (selectedProgram !== 'all' && ep.program !== selectedProgram) return false;
       if (selectedSeason !== 'all' && Number(ep.season) !== Number(selectedSeason)) return false;
-      if (selectedTopic !== 'الكل' && ep.topic !== selectedTopic) return false;
 
       if (normSearch) {
         const titleNorm = normalizeArabic(ep.title);
-        const topicNorm = normalizeArabic(ep.topic || '');
         const descNorm = normalizeArabic(ep.description || '');
         const epNumStr = ep.episode_number?.toString() || '';
         const seasonNumStr = ep.season?.toString() || '';
 
         const matchesTitle = titleNorm.includes(normSearch);
-        const matchesTopic = topicNorm.includes(normSearch);
         const matchesDesc = descNorm.includes(normSearch);
         const matchesNumber = normSearch.includes(`حلقة ${epNumStr}`) || normSearch.includes(`موسم ${seasonNumStr}`);
 
-        if (!matchesTitle && !matchesTopic && !matchesDesc && !matchesNumber) return false;
+        if (!matchesTitle && !matchesDesc && !matchesNumber) return false;
       }
 
       return true;
     });
-  }, [episodes, searchQuery, selectedProgram, selectedSeason, selectedTopic]);
+  }, [episodes, searchQuery, selectedProgram, selectedSeason]);
 
   const handleResetFilters = () => {
     setSearchQuery('');
     setSelectedProgram('all');
     setSelectedSeason('all');
-    setSelectedTopic('الكل');
   };
 
   const resumePlayback = () => {
@@ -166,42 +154,14 @@ export default function HomePage() {
     }
   };
 
-  // فتح صفحة الحلقة الدقيقة مباشرة بالثانية المحددة
-  const playQuoteDirectly = (quoteItem: QuoteItem) => {
-    // 1. مطابقة دقيقة للحلقة من قاعدة البيانات
-    const matched = episodes.find((e) => {
-      const isSameProg = e.program === quoteItem.program;
-      const isSameSeason = Number(e.season) === Number(quoteItem.season);
-      const isSameEpNum = Number(e.episode_number) === Number(quoteItem.episodeNumber);
-      return (isSameProg && isSameSeason && isSameEpNum) || (quoteItem.youtubeId && e.youtube_video_id === quoteItem.youtubeId);
-    });
-
-    // 2. إيقاف أي مشغل سفلي
-    usePlayerStore.setState({ currentEpisode: null, isPlaying: false });
-
-    if (matched) {
-      router.push(`/episodes/${matched.slug || matched.id}?t=${quoteItem.seekSeconds}`);
-    } else {
-      // تشغيل احتياطي مباشر في المشغل
-      playEpisode({
-        id: quoteItem.id,
-        title: quoteItem.titleHint,
-        youtube_video_id: quoteItem.youtubeId || 'Kionl7cyGfM',
-        season: quoteItem.season,
-        episode_number: quoteItem.episodeNumber,
-        program: quoteItem.program,
-        initialSeekTime: quoteItem.seekSeconds,
-      } as any, 'video');
-    }
-  };
-
-  const isFiltered = searchQuery !== '' || selectedProgram !== 'all' || selectedSeason !== 'all' || selectedTopic !== 'الكل';
+  const isFiltered = searchQuery !== '' || selectedProgram !== 'all' || selectedSeason !== 'all';
   const latestEpisode = episodes.length > 0 ? episodes[0] : null;
 
   return (
     <main className="min-h-screen bg-[#07080b] text-zinc-100 flex flex-col pb-36 selection:bg-amber-400 selection:text-zinc-950">
       <Navbar />
 
+      {/* الهيرو السينمائي */}
       <section className="relative w-full min-h-[75vh] sm:min-h-[82vh] flex items-center justify-start overflow-hidden border-b border-zinc-800/80 pt-24 pb-14 px-5 sm:px-12 lg:px-20">
         <div className="absolute inset-0 z-0">
           <img
@@ -270,19 +230,11 @@ export default function HomePage() {
               <span className="text-xs sm:text-sm font-black text-white font-mono">6 + 3</span>
               <span className="text-[11px] text-zinc-400">مواسم</span>
             </div>
-
-            <div className="h-3 w-px bg-white/20" />
-
-            <div className="flex items-center gap-2 text-zinc-300">
-              <Folder className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs sm:text-sm font-black text-white font-mono">6</span>
-              <span className="text-[11px] text-zinc-400">مواضيع</span>
-            </div>
           </div>
-
         </div>
       </section>
 
+      {/* استئناف الاستماع */}
       {lastPlayed && (
         <section className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 -mt-6 sm:-mt-8 relative z-20">
           <div className="rounded-3xl border border-amber-500/30 bg-zinc-900/90 backdrop-blur-2xl p-4 sm:p-5 shadow-2xl shadow-amber-950/20 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -336,7 +288,7 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* قسم فائدة اليوم مع الانتقال الدقيق والمباشر */}
+      {/* قسم فائدة اليوم */}
       <section className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 pt-6">
         <div className="rounded-3xl bg-gradient-to-r from-zinc-900/60 via-zinc-900/80 to-zinc-900/60 border border-zinc-800/80 p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4 backdrop-blur-md shadow-xl">
           <div className="flex items-start sm:items-center gap-3 w-full md:w-auto">
@@ -344,27 +296,25 @@ export default function HomePage() {
               <Quote className="w-5 h-5" />
             </div>
             <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-amber-400">فائدة اليوم</span>
-                <span className="text-[10px] text-zinc-500 font-mono">[{todayQuote.timeFormatted}]</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">{todayQuote.topic}</span>
-              </div>
-              <p className="text-xs sm:text-sm text-zinc-200 font-medium leading-relaxed mt-1">
+              <span className="text-[11px] font-bold text-amber-400">فائدة اليوم</span>
+              <p suppressHydrationWarning className="text-xs sm:text-sm text-zinc-200 font-medium leading-relaxed mt-1">
                 «{todayQuote.quote}»
               </p>
-              <span className="text-[11px] text-zinc-500 font-bold mt-0.5">
-                — {todayQuote.author} <span className="font-normal text-zinc-600">({todayQuote.titleHint})</span>
+              <span suppressHydrationWarning className="text-[11px] text-zinc-500 font-bold mt-0.5">
+                — {todayQuote.author}
               </span>
             </div>
           </div>
 
-          <button
-            onClick={() => playQuoteDirectly(todayQuote)}
-            className="flex-shrink-0 flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-black text-xs transition-all shadow-md active:scale-95 w-full md:w-auto"
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            <span>استمع لهذا المقطع الآن</span>
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
+            <button
+              onClick={handleCopyQuote}
+              className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition-all border border-zinc-700"
+            >
+              {copiedQuote ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-zinc-400" />}
+              <span>{copiedQuote ? 'تم النسخ!' : 'نسخ الفائدة'}</span>
+            </button>
+          </div>
         </div>
       </section>
 
@@ -391,7 +341,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* الفهرسة والبحث وشبكة الحلقات */}
+      {/* الفهرسة والبحث وشبكة الحلقات بدون فلتر الموضوعات */}
       <section id="series" className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 pt-8 flex flex-col gap-6">
         <div className="w-full max-w-2xl mx-auto">
           <div className="relative flex items-center group">
@@ -399,7 +349,7 @@ export default function HomePage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="ابحث عن حلقة، فكرة، موضوع، أو رقم موسم..."
+              placeholder="ابحث عن حلقة، فكرة، أو رقم موسم..."
               className="w-full bg-zinc-900/80 border border-zinc-700/80 hover:border-zinc-500 focus:border-amber-400/90 rounded-2xl py-3.5 pr-11 pl-11 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-500 shadow-xl focus:outline-none transition-all duration-300 backdrop-blur-xl"
             />
             <Search className="w-4 h-4 text-zinc-400 absolute right-3.5 pointer-events-none group-focus-within:text-amber-400 transition-colors" />
@@ -486,23 +436,6 @@ export default function HomePage() {
               </button>
             ))}
           </div>
-
-          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800/60">
-            <span className="text-xs font-bold text-zinc-400 ml-1">الموضوع:</span>
-            {TOPICS.map((topic) => (
-              <button
-                key={topic}
-                onClick={() => setSelectedTopic(topic)}
-                className={`px-3 py-1 rounded-full text-xs font-semibold transition-all border ${
-                  selectedTopic === topic
-                    ? 'bg-amber-400 text-zinc-950 border-amber-400 shadow-sm font-bold'
-                    : 'bg-zinc-950/40 text-zinc-400 border-zinc-800/80 hover:text-zinc-200 hover:border-zinc-700'
-                }`}
-              >
-                {topic}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="flex items-center justify-between text-xs text-zinc-400 px-1">
@@ -529,8 +462,8 @@ export default function HomePage() {
           </div>
         ) : filteredEpisodes.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-4 sm:gap-5">
-            {filteredEpisodes.map((episode) => (
-              <EpisodeCard key={episode.id} episode={episode} />
+            {filteredEpisodes.map((episode, idx) => (
+              <EpisodeCard key={episode.id} episode={episode} index={idx} />
             ))}
           </div>
         ) : (

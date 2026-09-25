@@ -4,10 +4,11 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Episode } from '@/types';
 import { usePlayerStore } from '@/store/usePlayerStore';
-import { Play, Headphones, Clock, Check, Bookmark } from 'lucide-react';
+import { Play, Headphones, Clock, Check } from 'lucide-react';
 
 interface EpisodeCardProps {
   episode: Episode;
+  index?: number;
 }
 
 function getCleanVideoId(rawId?: string): string {
@@ -29,22 +30,22 @@ function formatDuration(seconds?: number): string {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
-export default function EpisodeCard({ episode }: EpisodeCardProps) {
-  const { playEpisode } = usePlayerStore();
+export default function EpisodeCard({ episode, index = 0 }: EpisodeCardProps) {
+  const { playEpisode, currentEpisode } = usePlayerStore();
   const cleanId = useMemo(() => getCleanVideoId(episode.youtube_video_id), [episode.youtube_video_id]);
 
   const [attempt, setAttempt] = useState<number>(0);
   const [isWatched, setIsWatched] = useState(false);
   const [progressPercent, setProgressPercent] = useState<number>(0);
 
+  const isCurrent = currentEpisode?.id === episode.id || currentEpisode?.youtube_video_id === cleanId;
+
   useEffect(() => {
     setAttempt(0);
     try {
-      // قراءة حالة تم الاستماع
       const watchedList = JSON.parse(localStorage.getItem('eh_el_moshkla_watched') || '[]');
       setIsWatched(watchedList.includes(episode.id));
 
-      // قراءة نسبة التقدم إن وجدت
       const last = localStorage.getItem('eh_el_moshkla_last_played');
       if (last) {
         const parsed = JSON.parse(last);
@@ -81,9 +82,14 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
   }, [cleanId, attempt]);
 
   return (
-    <div className="group flex flex-col justify-between bg-zinc-900/40 hover:bg-zinc-800/60 border border-zinc-800/80 hover:border-amber-400/40 rounded-3xl p-3 sm:p-3.5 transition-all duration-300 shadow-lg hover:shadow-2xl hover:-translate-y-1">
-      
-      {/* الغلاف وأزرار التحديد والمدة */}
+    <div
+      style={{ animationDelay: `${(index % 12) * 35}ms` }}
+      className={`animate-card-fade group flex flex-col justify-between rounded-3xl p-3 sm:p-3.5 transition-all duration-300 shadow-lg hover:-translate-y-1 ${
+        isCurrent
+          ? 'bg-zinc-900/80 border border-amber-400/50 shadow-amber-950/20 ring-1 ring-amber-400/30'
+          : 'bg-zinc-900/40 hover:bg-zinc-800/60 border border-zinc-800/80 hover:border-amber-400/40 hover:shadow-[0_0_20px_-5px_rgba(251,191,36,0.12)]'
+      }`}
+    >
       <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-zinc-950 border border-white/5 flex-shrink-0">
         <img
           src={thumbnailSrc}
@@ -95,7 +101,7 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
 
-        {/* زر تم الاستماع (الأعلى يميناً) */}
+        {/* زر تم الاستماع */}
         <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
           <button
             onClick={toggleWatched}
@@ -122,7 +128,7 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
           {episode.program === 'ala-el-maghreb' ? 'عالـمغرب' : 'الموسم'} {episode.season} • حـ{episode.episode_number}
         </div>
 
-        {/* شريط الإنجاز الذهبي التلقائي */}
+        {/* شريط الإنجاز الذهبي */}
         {progressPercent > 0 && !isWatched && (
           <div className="absolute bottom-0 inset-x-0 h-1 bg-zinc-800/80">
             <div
@@ -133,7 +139,6 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
         )}
       </div>
 
-      {/* تفاصيل الحلقة */}
       <div className="flex flex-col gap-1.5 py-3 text-right">
         {episode.topic && (
           <span className="text-[10px] font-bold text-amber-400/90 truncate">
@@ -149,7 +154,6 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
         </Link>
       </div>
 
-      {/* أزرار التشغيل: صوت / فيديو */}
       <div className="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-800/60">
         <button
           onClick={() => playEpisode(episode, 'audio')}
@@ -167,7 +171,6 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
           <span>فيديو</span>
         </button>
       </div>
-
     </div>
   );
 }

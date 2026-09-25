@@ -2,10 +2,50 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  body {
-    font-family: var(--font-cairo), sans-serif;
-    background-color: #09090b;
-    color: #fafafa;
+/* نبض وتوهج الصوت المتنفس (Voice Breathing Glow) */
+@keyframes voiceTrackBreath {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px rgba(245, 158, 11, 0.4));
+    opacity: 0.85;
   }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.85));
+    opacity: 1;
+  }
+}
+
+/* اهتزاز مؤشر المايكروفون الصوتي (Mic Pulse Ring) */
+@keyframes micVoicePulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.animate-voice-breath {
+  animation: voiceTrackBreath 2.4s ease-in-out infinite;
+}
+
+.animate-mic-pulse {
+  animation: micVoicePulse 1.6s ease-out infinite;
+}
+
+/* الظهور المتتابع للبطاقات */
+@keyframes cardFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-card-fade {
+  animation: cardFadeIn 0.35s ease-out forwards;
 }
