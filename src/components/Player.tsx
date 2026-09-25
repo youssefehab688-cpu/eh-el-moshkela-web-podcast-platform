@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { 
   Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, 
-  SkipBack, SkipForward, X, Maximize2
+  SkipBack, SkipForward, X, Maximize2, Moon
 } from 'lucide-react';
 
 export default function Player() {
@@ -24,24 +24,48 @@ export default function Player() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [sleepTimer, setSleepTimer] = useState<number | null>(null); // بالدقائق
+  const [showSleepMenu, setShowSleepMenu] = useState(false);
 
   const playerRef = useRef<any>(null);
   const timeUpdateInterval = useRef<NodeJS.Timeout | null>(null);
+  const sleepTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleClose = () => {
     usePlayerStore.setState({ currentEpisode: null, isPlaying: false });
   };
 
-  // الانتقال لصفحة تفاصيل الحلقة وتدوين الملاحظات بنفس الدقيقة
   const handleOpenEpisodePage = () => {
     if (!currentEpisode) return;
     const targetSlug = currentEpisode.slug || currentEpisode.id;
-    // حفظ التوقيت الحالي لتبدأ الصفحة الداخلية منه
     try {
       localStorage.setItem('eh_el_moshkla_seek_target', currentTime.toString());
     } catch (e) {}
     router.push(`/episodes/${targetSlug}`);
   };
+
+  // مؤقت النوم
+  const setTimer = (mins: number | null) => {
+    if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+    setSleepTimer(mins);
+    setShowSleepMenu(false);
+
+    if (mins !== null) {
+      sleepTimerRef.current = setTimeout(() => {
+        if (playerRef.current) {
+          playerRef.current.pauseVideo();
+          setIsPlaying(false);
+        }
+        setSleepTimer(null);
+      }, mins * 60 * 1000);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (currentEpisode && currentTime > 5) {
@@ -55,13 +79,11 @@ export default function Player() {
             savedAt: Date.now()
           })
         );
-      } catch (e) {
-        console.error(e);
-      }
+      } catch (e) {}
     }
   }, [currentEpisode, currentTime, duration]);
 
-  // إعداد Media Session لشاشة القفل
+  // Media Session للتحكم من شاشة القفل
   useEffect(() => {
     if (!currentEpisode || typeof window === 'undefined' || !('mediaSession' in navigator)) return;
 
@@ -263,15 +285,38 @@ export default function Player() {
           : 'bottom-0 inset-x-0 bg-zinc-950/90 border-t border-zinc-800/80 backdrop-blur-2xl px-4 py-3'
       }`}
     >
-      {/* نافذة الفيديو المصغرة */}
       <div className={`${mode === 'video' ? 'w-full aspect-video bg-black relative' : 'hidden'}`}>
         <div id="youtube-player" className="w-full h-full" />
       </div>
       {mode === 'audio' && <div id="youtube-player" className="hidden" />}
 
-      {/* لوحة التحكم */}
-      <div className="flex flex-col gap-2.5 p-2 sm:p-3">
-        {/* معلومات الحلقة وأزرار التكبير */}
+      <div className="flex flex-col gap-2.5 p-2 sm:p-3 relative">
+        {/* نافذة خيارات مؤقت النوم المنبثقة */}
+        {showSleepMenu && (
+          <div className="absolute bottom-full mb-3 left-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-2 shadow-2xl flex flex-col gap-1 z-50 min-w-[140px] text-right">
+            <span className="text-[10px] text-zinc-500 font-bold px-2 py-1">مؤقت النوم</span>
+            {[15, 30, 45, 60].map((mins) => (
+              <button
+                key={mins}
+                onClick={() => setTimer(mins)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold text-right transition-colors ${
+                  sleepTimer === mins ? 'bg-amber-400 text-zinc-950' : 'text-zinc-300 hover:bg-zinc-800'
+                }`}
+              >
+                بعد {mins} دقيقة
+              </button>
+            ))}
+            {sleepTimer && (
+              <button
+                onClick={() => setTimer(null)}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold text-red-400 hover:bg-red-950/30 text-right"
+              >
+                إلغاء المؤقت
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 overflow-hidden">
             <img
@@ -280,7 +325,7 @@ export default function Player() {
               className="w-11 h-11 rounded-xl object-cover flex-shrink-0 border border-zinc-800"
             />
             <div className="flex flex-col min-w-0">
-              <span className="text-xs font-bold text-white truncate max-w-[200px] sm:max-w-xs">
+              <span className="text-xs font-bold text-white truncate max-w-[180px] sm:max-w-xs">
                 {currentEpisode.title}
               </span>
               <span className="text-[11px] text-zinc-400">
@@ -290,7 +335,6 @@ export default function Player() {
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* زر الانتقال المباشر لصفحة الحلقة وتدوين الملاحظات */}
             <button
               onClick={handleOpenEpisodePage}
               title="فتح صفحة الحلقة والملاحظات"
@@ -300,7 +344,6 @@ export default function Player() {
               <span className="hidden sm:inline">تدوين الملاحظات</span>
             </button>
 
-            {/* تبديل الوضع بين صوت وفيديو */}
             <button
               onClick={() => setMode(mode === 'audio' ? 'video' : 'audio')}
               className="px-2.5 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs font-bold text-zinc-300 hover:text-white"
@@ -317,7 +360,7 @@ export default function Player() {
           </div>
         </div>
 
-        {/* شريط التقدم: مضبوط باتجاه LTR من اليسار لليمين مثل يوتيوب تماماً */}
+        {/* شريط التقدم LTR */}
         <div dir="ltr" className="flex items-center gap-2.5 text-[11px] text-zinc-400 font-mono select-none">
           <span className="w-10 text-right">{formatTime(currentTime)}</span>
           <input
@@ -331,21 +374,32 @@ export default function Player() {
           <span className="w-10 text-left">{formatTime(duration)}</span>
         </div>
 
-        {/* أزرار التحكم بالصوت والتشغيل والتنقل */}
+        {/* التحكم السفلي ومؤقت النوم */}
         <div dir="ltr" className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-2">
             <button onClick={toggleMute} className="text-zinc-400 hover:text-white p-1">
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
+
             <button
               onClick={changeSpeed}
               className="text-[11px] font-bold font-mono px-2 py-0.5 rounded-lg bg-zinc-900 text-amber-400 border border-zinc-800"
             >
               {playbackRate}x
             </button>
+
+            {/* زر مؤقت النوم */}
+            <button
+              onClick={() => setShowSleepMenu(!showSleepMenu)}
+              title="مؤقت النوم"
+              className={`p-1.5 rounded-lg transition-colors ${
+                sleepTimer ? 'bg-amber-400/20 text-amber-400 border border-amber-400/40' : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <Moon className="w-3.5 h-3.5" />
+            </button>
           </div>
 
-          {/* أزرار التشغيل: الترتيب الصحيح (سابق • رجوع 15ث • تشغيل • تقديم 15ث • تالٍ) */}
           <div className="flex items-center gap-3 sm:gap-4">
             <button onClick={handlePrev} title="الحلقة السابقة" className="text-zinc-400 hover:text-white">
               <SkipBack className="w-4 h-4" />
@@ -369,7 +423,7 @@ export default function Player() {
             </button>
           </div>
 
-          <div className="w-12" /> {/* موازنة المسافات */}
+          <div className="w-12" />
         </div>
       </div>
     </div>

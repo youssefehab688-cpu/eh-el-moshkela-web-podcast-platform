@@ -10,7 +10,7 @@ import { usePlayerStore } from '@/store/usePlayerStore';
 import { 
   Search, X, Radio, Moon, 
   Layers, CheckCircle2, RotateCcw, Play, Headphones, 
-  Sparkles, ArrowDown, Folder, Clock, History
+  Sparkles, ArrowDown, Folder, Clock, History, Compass, Quote
 } from 'lucide-react';
 
 const TOPICS = [
@@ -20,6 +20,32 @@ const TOPICS = [
   'تطوير وعادات',
   'معاملات وأموال',
   'شبهات وأسئلة'
+];
+
+// مسارات استماع موجهة
+const CURATED_PATHS = [
+  { id: 'path-faith', title: 'مسار التوبة وترويض النفس', query: 'توبة', icon: '🌱' },
+  { id: 'path-marriage', title: 'مسار العلاقات واختيار الشريك', query: 'زواج', icon: '💍' },
+  { id: 'path-prayer', title: 'مسار الخشوع والراحة في الصلاة', query: 'صلاة', icon: '🕌' },
+];
+
+// اقتباسات اليوم الذكية
+const DAILY_QUOTES = [
+  {
+    quote: 'العبرة ليست بكمية الذنوب التي تثقلك، بل بسرعة انكسارك ورجوعك إلى الله بعد السقوط.',
+    author: 'د. محمد الغليظ',
+    searchTitle: 'التوبة'
+  },
+  {
+    quote: 'أعظم علاج للشتات هو أن تجعل همومك كلها هماً واحداً: كيف ترضي ربك؟',
+    author: 'د. أمير منير',
+    searchTitle: 'الشتات'
+  },
+  {
+    quote: 'الزواج ليس مجرد حب عاطفي عابر، بل هو شراكة لبناء إنسان يرضي الله في الأرض.',
+    author: 'م. ياسر ممدوح',
+    searchTitle: 'الزواج'
+  }
 ];
 
 function normalizeArabic(text: string): string {
@@ -48,7 +74,6 @@ export default function HomePage() {
   const [selectedSeason, setSelectedSeason] = useState<number | 'all'>('all');
   const [selectedTopic, setSelectedTopic] = useState<string>('الكل');
 
-  // استئناف الاستماع (Continue Listening)
   const [lastPlayed, setLastPlayed] = useState<{
     episode: Episode;
     currentTime: number;
@@ -58,7 +83,6 @@ export default function HomePage() {
   const { setPlaylist, playEpisode } = usePlayerStore();
 
   useEffect(() => {
-    // قراءة آخر حلقة تم الاستماع لها
     try {
       const saved = localStorage.getItem('eh_el_moshkla_last_played');
       if (saved) {
@@ -67,9 +91,7 @@ export default function HomePage() {
           setLastPlayed(parsed);
         }
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
 
     async function fetchEpisodes() {
       try {
@@ -155,14 +177,15 @@ export default function HomePage() {
   const isFiltered = searchQuery !== '' || selectedProgram !== 'all' || selectedSeason !== 'all' || selectedTopic !== 'الكل';
   const latestEpisode = episodes.length > 0 ? episodes[0] : null;
 
+  // اختيار اقتباس اليوم بناءً على اليوم من الشهر
+  const todayQuote = DAILY_QUOTES[new Date().getDate() % DAILY_QUOTES.length];
+
   return (
     <main className="min-h-screen bg-[#07080b] text-zinc-100 flex flex-col pb-36 selection:bg-amber-400 selection:text-zinc-950">
       <Navbar />
 
       {/* الهيرو السينمائي */}
       <section className="relative w-full min-h-[75vh] sm:min-h-[82vh] flex items-center justify-start overflow-hidden border-b border-zinc-800/80 pt-24 pb-14 px-5 sm:px-12 lg:px-20">
-        
-        {/* خلفية الاستوديو الأصلية */}
         <div className="absolute inset-0 z-0">
           <img
             src="/hero-banner.jpg"
@@ -179,9 +202,7 @@ export default function HomePage() {
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#07080b]/60 to-[#07080b]/95" />
         </div>
 
-        {/* محتوى الهيرو */}
         <div className="relative z-10 w-full max-w-2xl flex flex-col items-start text-right gap-4 sm:gap-5">
-          
           <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-zinc-950/70 border border-white/15 text-[11px] font-bold text-zinc-300 backdrop-blur-md shadow-lg">
             <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
             <span>بودكاست إيه المشكلة؟ وعالـمغرب</span>
@@ -218,7 +239,6 @@ export default function HomePage() {
             </a>
           </div>
 
-          {/* شريط الإحصائيات: 6 + 3 مواسم */}
           <div className="flex items-center gap-4 sm:gap-6 pt-3 border-t border-white/10 w-full max-w-md">
             <div className="flex items-center gap-2 text-zinc-300">
               <Headphones className="w-4 h-4 text-amber-400" />
@@ -246,9 +266,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ========================================================
-          قسم استئناف الاستماع (Continue Listening Card)
-          ======================================================== */}
+      {/* استئناف الاستماع */}
       {lastPlayed && (
         <section className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 -mt-6 sm:-mt-8 relative z-20">
           <div className="rounded-3xl border border-amber-500/30 bg-zinc-900/90 backdrop-blur-2xl p-4 sm:p-5 shadow-2xl shadow-amber-950/20 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -302,9 +320,56 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* قسم الفهرسة والحلقات */}
+      {/* اقتباس اليوم الذكي */}
+      <section className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 pt-6">
+        <div className="rounded-3xl bg-gradient-to-r from-zinc-900/60 via-zinc-900/80 to-zinc-900/60 border border-zinc-800/80 p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-amber-400/10 text-amber-400 border border-amber-400/20 flex-shrink-0">
+              <Quote className="w-5 h-5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[11px] font-bold text-amber-400">فائدة اليوم</span>
+              <p className="text-xs sm:text-sm text-zinc-200 font-medium leading-relaxed">
+                «{todayQuote.quote}»
+              </p>
+              <span className="text-[11px] text-zinc-500 font-bold mt-0.5">— {todayQuote.author}</span>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setSearchQuery(todayQuote.searchTitle)}
+            className="flex-shrink-0 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-white transition-colors border border-zinc-700"
+          >
+            تصفح الحلقات المتعلقة
+          </button>
+        </div>
+      </section>
+
+      {/* المسارات الموجهة */}
+      <section className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 pt-6">
+        <div className="flex items-center gap-2 pb-3">
+          <Compass className="w-4 h-4 text-amber-400" />
+          <h3 className="text-xs font-black text-white uppercase tracking-wider">مسارات استماع موجهة لمشكلات محددة:</h3>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {CURATED_PATHS.map((path) => (
+            <button
+              key={path.id}
+              onClick={() => setSearchQuery(path.query)}
+              className="flex items-center gap-3 p-3.5 rounded-2xl bg-zinc-900/40 hover:bg-zinc-800/60 border border-zinc-800/80 hover:border-amber-400/40 transition-all text-right group"
+            >
+              <span className="text-2xl p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 flex-shrink-0">{path.icon}</span>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-white group-hover:text-amber-400 transition-colors">{path.title}</span>
+                <span className="text-[10px] text-zinc-400 mt-0.5">اضغط لعرض حلقات المسار</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* الفهرسة والبحث وشبكة الحلقات */}
       <section id="series" className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 pt-8 flex flex-col gap-6">
-        
         <div className="w-full max-w-2xl mx-auto">
           <div className="relative flex items-center group">
             <input
