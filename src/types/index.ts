@@ -61,3 +61,10 @@ export interface Note {
   user_id?: string;
   [key: string]: any;
 }
+
+export interface UserProgressItem {
+  episode_id: string;
+  last_position_seconds: number;
+  is_completed: boolean;
+  updated_at?: string;
+}
