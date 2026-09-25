@@ -10,7 +10,7 @@ import { usePlayerStore } from '@/store/usePlayerStore';
 import { 
   Search, X, Radio, Moon, 
   Layers, CheckCircle2, RotateCcw, Play, Headphones, 
-  Sparkles, ArrowDown, Folder
+  Sparkles, ArrowDown, Folder, Clock, History
 } from 'lucide-react';
 
 const TOPICS = [
@@ -33,6 +33,12 @@ function normalizeArabic(text: string): string {
     .trim();
 }
 
+function formatMinutes(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
 export default function HomePage() {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,9 +48,29 @@ export default function HomePage() {
   const [selectedSeason, setSelectedSeason] = useState<number | 'all'>('all');
   const [selectedTopic, setSelectedTopic] = useState<string>('الكل');
 
+  // استئناف الاستماع (Continue Listening)
+  const [lastPlayed, setLastPlayed] = useState<{
+    episode: Episode;
+    currentTime: number;
+    duration: number;
+  } | null>(null);
+
   const { setPlaylist, playEpisode } = usePlayerStore();
 
   useEffect(() => {
+    // قراءة آخر حلقة تم الاستماع لها
+    try {
+      const saved = localStorage.getItem('eh_el_moshkla_last_played');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.episode && parsed?.currentTime > 5) {
+          setLastPlayed(parsed);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
     async function fetchEpisodes() {
       try {
         const { data, error } = await supabase
@@ -116,6 +142,16 @@ export default function HomePage() {
     setSelectedTopic('الكل');
   };
 
+  const resumePlayback = () => {
+    if (lastPlayed) {
+      const epWithSeek = {
+        ...lastPlayed.episode,
+        initialSeekTime: lastPlayed.currentTime,
+      };
+      playEpisode(epWithSeek, 'audio');
+    }
+  };
+
   const isFiltered = searchQuery !== '' || selectedProgram !== 'all' || selectedSeason !== 'all' || selectedTopic !== 'الكل';
   const latestEpisode = episodes.length > 0 ? episodes[0] : null;
 
@@ -126,7 +162,7 @@ export default function HomePage() {
       {/* الهيرو السينمائي */}
       <section className="relative w-full min-h-[75vh] sm:min-h-[82vh] flex items-center justify-start overflow-hidden border-b border-zinc-800/80 pt-24 pb-14 px-5 sm:px-12 lg:px-20">
         
-        {/* خلفية الاستوديو */}
+        {/* خلفية الاستوديو الأصلية */}
         <div className="absolute inset-0 z-0">
           <img
             src="/hero-banner.jpg"
@@ -209,6 +245,62 @@ export default function HomePage() {
 
         </div>
       </section>
+
+      {/* ========================================================
+          قسم استئناف الاستماع (Continue Listening Card)
+          ======================================================== */}
+      {lastPlayed && (
+        <section className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 -mt-6 sm:-mt-8 relative z-20">
+          <div className="rounded-3xl border border-amber-500/30 bg-zinc-900/90 backdrop-blur-2xl p-4 sm:p-5 shadow-2xl shadow-amber-950/20 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4 w-full md:w-auto">
+              <div className="relative h-14 w-24 sm:h-16 sm:w-28 rounded-2xl overflow-hidden flex-shrink-0 border border-white/10">
+                <img
+                  src={`https://img.youtube.com/vi/${lastPlayed.episode.youtube_video_id}/mqdefault.jpg`}
+                  alt={lastPlayed.episode.title}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                  <History className="w-5 h-5 text-amber-400" />
+                </div>
+              </div>
+
+              <div className="flex flex-col min-w-0">
+                <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" />
+                  أكمل من حيث توقفت
+                </span>
+                <h4 className="text-xs sm:text-sm font-black text-white truncate max-w-sm sm:max-w-md">
+                  {lastPlayed.episode.title}
+                </h4>
+                <span className="text-[11px] text-zinc-400 font-mono mt-0.5">
+                  توقفت عند الدقيقة {formatMinutes(lastPlayed.currentTime)}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+              <button
+                onClick={resumePlayback}
+                className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-zinc-950 font-black text-xs sm:text-sm transition-all shadow-lg active:scale-95 w-full md:w-auto"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>متابعة الاستماع</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  localStorage.removeItem('eh_el_moshkla_last_played');
+                  setLastPlayed(null);
+                }}
+                className="p-2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                title="إخفاء"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* قسم الفهرسة والحلقات */}
       <section id="series" className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 pt-8 flex flex-col gap-6">
