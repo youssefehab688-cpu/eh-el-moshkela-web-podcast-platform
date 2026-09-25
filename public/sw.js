@@ -3,10 +3,10 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(clients.claim());
+  event.waitUntil(self.clients.claim());
 });
 
 self.addEventListener('fetch', (event) => {
-  // يتيح للمتصفح التأكد من وجود معالج fetch لمتطلبات الـ PWA
-  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+  // تمرير الطلبات بسلاسة دون تعارض مع اتصالات Supabase و Vercel
+  event.respondWith(fetch(event.request));
 });

@@ -1,47 +1,51 @@
-import type { Metadata, Viewport } from "next";
-import { Cairo } from "next/font/google";
-import "./globals.css";
-import RegisterSW from "@/components/RegisterSW";
-
-const cairo = Cairo({
-  subsets: ["arabic", "latin"],
-  weight: ["400", "600", "700", "800", "900"],
-  variable: "--font-cairo",
-});
+import type { Metadata, Viewport } from 'next';
+import './globals.css';
+import Script from 'next/script';
 
 export const viewport: Viewport = {
-  themeColor: "#09090b",
-  width: "device-width",
+  themeColor: '#090a0f',
+  width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  maximumScale: 5,
 };
 
 export const metadata: Metadata = {
-  title: "إيه المشكلة؟ | المنصة الرسمية للحلقات والبودكاست",
-  description: "استمع وشاهد حلقات بودكاست إيه المشكلة بدقة عالية، مع إمكانية التبديل اللحظي بين الصوت والفيديو والملاحظات المخصصة.",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "إيه المشكلة؟",
+  title: 'بودكاست إيه المشكلة؟ وعالـمغرب',
+  description: 'المنصة الصوتية والمرئية الكاملة لبودكاست إيه المشكلة وعالـمغرب',
+  manifest: '/manifest.json',
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
   },
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html lang="ar" dir="rtl" className="dark">
+    <html lang="ar" dir="rtl">
       <head>
-        <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-        <link rel="apple-touch-icon" href="/icon.svg" />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
-      <body className={`${cairo.variable} font-sans bg-zinc-950 text-zinc-100 min-h-screen antialiased selection:bg-slate-200 selection:text-black`}>
-        <RegisterSW />
+      <body className="bg-[#08090d] text-zinc-100 antialiased min-h-screen">
         {children}
+
+        {/* كود تسجيل الـ Service Worker لمتصفح Brave وجميع متصفحات Chromium */}
+        <Script id="register-sw" strategy="afterInteractive">
+          {`
+            if ('serviceWorker' in navigator) {
+              window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js').catch(function(err) {
+                  console.log('SW registration failed: ', err);
+                });
+              });
+            }
+          `}
+        </Script>
       </body>
     </html>
   );
