@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { 
   Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, 
-  SkipBack, SkipForward, X
+  SkipBack, SkipForward, X, Maximize2
 } from 'lucide-react';
 
 export default function Player() {
+  const router = useRouter();
   const {
     currentEpisode,
     isPlaying,
@@ -26,12 +28,21 @@ export default function Player() {
   const playerRef = useRef<any>(null);
   const timeUpdateInterval = useRef<NodeJS.Timeout | null>(null);
 
-  // إغلاق المشغل
   const handleClose = () => {
     usePlayerStore.setState({ currentEpisode: null, isPlaying: false });
   };
 
-  // حفظ التوقيت الحالي لاستئناف الاستماع
+  // الانتقال لصفحة تفاصيل الحلقة وتدوين الملاحظات بنفس الدقيقة
+  const handleOpenEpisodePage = () => {
+    if (!currentEpisode) return;
+    const targetSlug = currentEpisode.slug || currentEpisode.id;
+    // حفظ التوقيت الحالي لتبدأ الصفحة الداخلية منه
+    try {
+      localStorage.setItem('eh_el_moshkla_seek_target', currentTime.toString());
+    } catch (e) {}
+    router.push(`/episodes/${targetSlug}`);
+  };
+
   useEffect(() => {
     if (currentEpisode && currentTime > 5) {
       try {
@@ -50,7 +61,7 @@ export default function Player() {
     }
   }, [currentEpisode, currentTime, duration]);
 
-  // إعداد Media Session للتحكم من شاشة القفل
+  // إعداد Media Session لشاشة القفل
   useEffect(() => {
     if (!currentEpisode || typeof window === 'undefined' || !('mediaSession' in navigator)) return;
 
@@ -88,7 +99,6 @@ export default function Player() {
     });
   }, [currentEpisode, setIsPlaying]);
 
-  // تحميل مكتبة YouTube IFrame API
   useEffect(() => {
     if (typeof window !== 'undefined' && !(window as any).YT) {
       const tag = document.createElement('script');
@@ -98,7 +108,6 @@ export default function Player() {
     }
   }, []);
 
-  // تشغيل وتهيئة الفيديو
   useEffect(() => {
     if (!currentEpisode || typeof window === 'undefined') return;
 
@@ -132,13 +141,13 @@ export default function Player() {
               setIsPlaying(true);
             },
             onStateChange: (event: any) => {
-              if (event.data === 1) { // PLAYING
+              if (event.data === 1) {
                 setIsPlaying(true);
                 startTimeTracking();
-              } else if (event.data === 2) { // PAUSED
+              } else if (event.data === 2) {
                 setIsPlaying(false);
                 stopTimeTracking();
-              } else if (event.data === 0) { // ENDED
+              } else if (event.data === 0) {
                 setIsPlaying(false);
                 stopTimeTracking();
                 handleNext();
@@ -254,12 +263,15 @@ export default function Player() {
           : 'bottom-0 inset-x-0 bg-zinc-950/90 border-t border-zinc-800/80 backdrop-blur-2xl px-4 py-3'
       }`}
     >
+      {/* نافذة الفيديو المصغرة */}
       <div className={`${mode === 'video' ? 'w-full aspect-video bg-black relative' : 'hidden'}`}>
         <div id="youtube-player" className="w-full h-full" />
       </div>
       {mode === 'audio' && <div id="youtube-player" className="hidden" />}
 
-      <div className="flex flex-col gap-2 p-3 sm:p-4">
+      {/* لوحة التحكم */}
+      <div className="flex flex-col gap-2.5 p-2 sm:p-3">
+        {/* معلومات الحلقة وأزرار التكبير */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 overflow-hidden">
             <img
@@ -268,7 +280,7 @@ export default function Player() {
               className="w-11 h-11 rounded-xl object-cover flex-shrink-0 border border-zinc-800"
             />
             <div className="flex flex-col min-w-0">
-              <span className="text-xs font-bold text-white truncate max-w-[220px] sm:max-w-xs">
+              <span className="text-xs font-bold text-white truncate max-w-[200px] sm:max-w-xs">
                 {currentEpisode.title}
               </span>
               <span className="text-[11px] text-zinc-400">
@@ -278,66 +290,86 @@ export default function Player() {
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* زر الانتقال المباشر لصفحة الحلقة وتدوين الملاحظات */}
+            <button
+              onClick={handleOpenEpisodePage}
+              title="فتح صفحة الحلقة والملاحظات"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-xs font-bold text-amber-400 transition-colors"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">تدوين الملاحظات</span>
+            </button>
+
+            {/* تبديل الوضع بين صوت وفيديو */}
             <button
               onClick={() => setMode(mode === 'audio' ? 'video' : 'audio')}
-              className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-xs font-bold text-zinc-300 hover:text-white"
+              className="px-2.5 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs font-bold text-zinc-300 hover:text-white"
             >
               {mode === 'audio' ? 'عرض الفيديو' : 'وضع الصوت'}
             </button>
+
             <button
               onClick={handleClose}
-              className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800"
+              className="p-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-[10px] text-zinc-400 font-mono">
-          <span>{formatTime(currentTime)}</span>
+        {/* شريط التقدم: مضبوط باتجاه LTR من اليسار لليمين مثل يوتيوب تماماً */}
+        <div dir="ltr" className="flex items-center gap-2.5 text-[11px] text-zinc-400 font-mono select-none">
+          <span className="w-10 text-right">{formatTime(currentTime)}</span>
           <input
             type="range"
             min={0}
             max={duration || 100}
             value={currentTime}
             onChange={handleSeek}
-            className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
+            className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-400 focus:outline-none"
           />
-          <span>{formatTime(duration)}</span>
+          <span className="w-10 text-left">{formatTime(duration)}</span>
         </div>
 
-        <div className="flex items-center justify-between pt-1">
-          <button
-            onClick={changeSpeed}
-            className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-zinc-900 text-amber-400 border border-zinc-800"
-          >
-            {playbackRate}x
-          </button>
+        {/* أزرار التحكم بالصوت والتشغيل والتنقل */}
+        <div dir="ltr" className="flex items-center justify-between pt-1">
+          <div className="flex items-center gap-2">
+            <button onClick={toggleMute} className="text-zinc-400 hover:text-white p-1">
+              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={changeSpeed}
+              className="text-[11px] font-bold font-mono px-2 py-0.5 rounded-lg bg-zinc-900 text-amber-400 border border-zinc-800"
+            >
+              {playbackRate}x
+            </button>
+          </div>
 
-          <div className="flex items-center gap-3">
-            <button onClick={handlePrev} className="text-zinc-400 hover:text-white">
+          {/* أزرار التشغيل: الترتيب الصحيح (سابق • رجوع 15ث • تشغيل • تقديم 15ث • تالٍ) */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            <button onClick={handlePrev} title="الحلقة السابقة" className="text-zinc-400 hover:text-white">
               <SkipBack className="w-4 h-4" />
             </button>
-            <button onClick={() => seekRelative(-15)} className="text-zinc-400 hover:text-white">
+            <button onClick={() => seekRelative(-15)} title="رجوع 15 ثانية" className="text-zinc-400 hover:text-white">
               <RotateCcw className="w-4 h-4" />
             </button>
+
             <button
               onClick={togglePlay}
               className="w-10 h-10 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 flex items-center justify-center shadow-lg transition-transform active:scale-95"
             >
               {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
             </button>
-            <button onClick={() => seekRelative(15)} className="text-zinc-400 hover:text-white">
+
+            <button onClick={() => seekRelative(15)} title="تقديم 15 ثانية" className="text-zinc-400 hover:text-white">
               <RotateCw className="w-4 h-4" />
             </button>
-            <button onClick={handleNext} className="text-zinc-400 hover:text-white">
+            <button onClick={handleNext} title="الحلقة التالية" className="text-zinc-400 hover:text-white">
               <SkipForward className="w-4 h-4" />
             </button>
           </div>
 
-          <button onClick={toggleMute} className="text-zinc-400 hover:text-white">
-            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
+          <div className="w-12" /> {/* موازنة المسافات */}
         </div>
       </div>
     </div>
