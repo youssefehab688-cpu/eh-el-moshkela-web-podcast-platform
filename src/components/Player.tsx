@@ -9,34 +9,6 @@ import {
   ChevronDown
 } from 'lucide-react';
 
-// معادلة موجة سامسونج One UI 9 الدقيقة
-function generateOneUiSurfacePath(wavelength = 40, height = 7.5, baseline = 16, totalWidth = 1440) {
-  const periods = Math.ceil(totalWidth / wavelength) + 2;
-  const wHalf = wavelength / 2;
-  let d = `M 0 ${baseline}`;
-  for (let i = 0; i < periods; i++) {
-    const x0 = i * wavelength;
-    const xMid = x0 + wHalf;
-    const xEnd = x0 + wavelength;
-
-    const cp1X = x0 + wavelength * 0.18;
-    const cp1Y = baseline;
-    const cp2X = xMid - wavelength * 0.18;
-    const cp2Y = baseline - height;
-
-    const cp3X = xMid + wavelength * 0.18;
-    const cp3Y = baseline - height;
-    const cp4X = xEnd - wavelength * 0.18;
-    const cp4Y = baseline;
-
-    d += ` C ${cp1X.toFixed(1)} ${cp1Y.toFixed(1)}, ${cp2X.toFixed(1)} ${cp2Y.toFixed(1)}, ${xMid.toFixed(1)} ${(baseline - height).toFixed(1)}`;
-    d += ` C ${cp3X.toFixed(1)} ${cp3Y.toFixed(1)}, ${cp4X.toFixed(1)} ${cp4Y.toFixed(1)}, ${xEnd.toFixed(1)} ${baseline.toFixed(1)}`;
-  }
-  return d;
-}
-
-const ONE_UI_SURFACE_PATH = generateOneUiSurfacePath(40, 7.5, 16, 1440);
-
 export default function Player() {
   const router = useRouter();
   const {
@@ -71,11 +43,12 @@ export default function Player() {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ startX: number; startY: number; posX: number; posY: number } | null>(null);
 
-  // إدارة مؤقت النوم (Sleep Timer)
+  // مؤقت النوم اللحظي
   const [sleepTimerMinutes, setSleepTimerMinutes] = useState<number | null>(null);
-  const [sleepTimerTimeLeft, setSleepTimerTimeLeft] = useState<number | null>(null); // بالثواني
+  const [sleepTimerTimeLeft, setSleepTimerTimeLeft] = useState<number | null>(null);
   const sleepTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [stopAtEndOfVideo, setStopAtEndOfVideo] = useState(false);
+  const stopAtEndOfVideoRef = useRef(false);
 
   const playerRef = useRef<any>(null);
   const timeUpdateInterval = useRef<NodeJS.Timeout | null>(null);
@@ -113,36 +86,34 @@ export default function Player() {
     setTimeout(() => setCopiedTimestamp(false), 2500);
   };
 
-  // وظيفة ضبط مؤقت النوم
   const setTimer = (mins: number | 'end' | null) => {
-    // تنظيف المؤقت الحالي إن وجد
     if (sleepTimerIntervalRef.current) clearInterval(sleepTimerIntervalRef.current);
-    
     setShowSleepMenu(false);
-    
+
     if (mins === null) {
       setSleepTimerMinutes(null);
       setSleepTimerTimeLeft(null);
       setStopAtEndOfVideo(false);
+      stopAtEndOfVideoRef.current = false;
       return;
     }
 
     if (mins === 'end') {
       setStopAtEndOfVideo(true);
+      stopAtEndOfVideoRef.current = true;
       setSleepTimerMinutes(null);
       setSleepTimerTimeLeft(null);
     } else {
       setStopAtEndOfVideo(false);
+      stopAtEndOfVideoRef.current = false;
       setSleepTimerMinutes(mins);
       const seconds = mins * 60;
       setSleepTimerTimeLeft(seconds);
 
-      // بدء العداد التنازلي الحي
       sleepTimerIntervalRef.current = setInterval(() => {
         setSleepTimerTimeLeft((prev) => {
           if (prev === null) return null;
           if (prev <= 1) {
-            // انتهى الوقت، أوقف التشغيل
             if (playerRef.current) {
               playerRef.current.pauseVideo();
               setIsPlaying(false);
@@ -157,7 +128,6 @@ export default function Player() {
     }
   };
 
-  // بدء التحجيم الطبيعي السلس من الزوايا الأربع
   const startResizeFromCorner = (corner: 'tl' | 'tr' | 'bl' | 'br') => (e: React.PointerEvent) => {
     e.stopPropagation();
     e.preventDefault();
@@ -172,7 +142,6 @@ export default function Player() {
     setIsResizing(true);
   };
 
-  // بدء السحب الحر للنافذة
   const handleDragStart = (e: React.PointerEvent) => {
     dragStartRef.current = {
       startX: e.clientX,
@@ -236,7 +205,6 @@ export default function Player() {
     };
   }, [isDragging, isResizing, position.y, setMode]);
 
-  // التفاعل اللحظي مع شريط الصوت
   const handleSeekEvent = (clientX: number) => {
     if (!trackRef.current || !playerRef.current || duration === 0) return;
     const rect = trackRef.current.getBoundingClientRect();
@@ -365,16 +333,13 @@ export default function Player() {
                 setIsPlaying(false);
                 stopTimeTracking();
               } else if (event.data === 0) {
-                // انتهى الفيديو
-                if (stopAtEndOfVideo) {
-                  // ميزة التوقف عند نهاية الفيديو مفعلة
+                if (stopAtEndOfVideoRef.current) {
                   setIsPlaying(false);
                   stopTimeTracking();
-                  // تنظيف المؤقت
                   setSleepTimerMinutes(null);
                   setStopAtEndOfVideo(false);
+                  stopAtEndOfVideoRef.current = false;
                 } else {
-                  // التشغيل التالي التلقائي العادي
                   setIsPlaying(false);
                   stopTimeTracking();
                   handleNext();
@@ -398,7 +363,7 @@ export default function Player() {
         try { playerRef.current.destroy(); } catch (e) {}
       }
     };
-  }, [currentEpisode?.youtube_video_id, stopAtEndOfVideo]);
+  }, [currentEpisode?.youtube_video_id]);
 
   const startTimeTracking = () => {
     stopTimeTracking();
@@ -473,7 +438,6 @@ export default function Player() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // تنسيق الوقت المتبقي للمؤقت (مثال: 12 د)
   const formatTimerLeft = (secs: number | null) => {
     if (secs === null) return '';
     const m = Math.ceil(secs / 60);
@@ -484,7 +448,6 @@ export default function Player() {
 
   const progressRatio = duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
   const progressPercent = progressRatio * 100;
-
   const timerActive = sleepTimerMinutes !== null || stopAtEndOfVideo;
 
   return (
@@ -500,7 +463,7 @@ export default function Player() {
           : 'bottom-0 inset-x-0 bg-zinc-950/90 border-t border-zinc-800/80 backdrop-blur-2xl px-4 py-3'
       }`}
     >
-      {/* مقابض التحجيم */}
+      {/* مقابض التحجيم غير المرئية */}
       {mode === 'video' && (
         <>
           <div onPointerDown={startResizeFromCorner('tl')} className="absolute top-0 left-0 w-8 h-8 z-40 cursor-nwse-resize select-none" title="اسحب لتكبير وتصغير النافذة" />
@@ -545,7 +508,7 @@ export default function Player() {
       {/* شريط التحكم السفلي */}
       <div className="flex flex-col gap-2 p-2 sm:p-3 relative overflow-hidden">
         
-        {/* قائمة مؤقت النوم المنسدلة النظيفة */}
+        {/* قائمة مؤقت النوم */}
         {showSleepMenu && (
           <div className="absolute bottom-full mb-3 left-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-2 shadow-2xl flex flex-col gap-1 z-50 min-w-[140px] text-right animate-card-fade">
             <span className="text-[10px] text-zinc-500 font-bold px-2 py-1">مؤقت النوم</span>
@@ -566,7 +529,7 @@ export default function Player() {
                 stopAtEndOfVideo ? 'bg-amber-400 text-zinc-950' : 'text-zinc-300 hover:bg-zinc-800'
               }`}
             >
-              لنهاية الفيديو 🔚
+              نهاية الفيديو
             </button>
             {timerActive && (
               <button
@@ -637,57 +600,40 @@ export default function Player() {
           </div>
         </div>
 
-        {/* شريط سامسونج One UI 9 */}
+        {/* شريط الصوت: تدرج لوني شمسي ثابت وفاتح عند الدائرة بدون أي حركة */}
         <div dir="ltr" className="flex items-center gap-3 text-[11px] text-zinc-400 font-mono select-none px-1">
           <span className="w-10 text-right font-medium">{formatTime(currentTime)}</span>
+          
           <div
             ref={trackRef}
             onPointerDown={handleTrackPointerDown}
             onPointerMove={handleTrackPointerMove}
-            className="flex-1 h-7 relative flex items-center cursor-pointer group"
+            className="flex-1 h-7 relative flex items-center cursor-pointer group touch-none select-none"
             title="انقر أو اسحب للانتقال في التوقيت"
           >
-            <svg className="w-full h-6 overflow-visible" preserveAspectRatio="none" viewBox="0 0 1000 24">
-              <defs>
-                <linearGradient id="oneUiSurfaceGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#ea580c" />
-                  <stop offset="70%" stopColor="#f59e0b" />
-                  <stop offset="100%" stopColor="#fbbf24" />
-                </linearGradient>
-                <clipPath id="oneUiSurfaceClip">
-                  <rect x="0" y="0" width={`${progressRatio * 1000}`} height="24" />
-                </clipPath>
-              </defs>
-              <line
-                x1={`${progressRatio * 1000}`}
-                y1="16"
-                x2="1000"
-                y2="16"
-                stroke="rgba(255, 255, 255, 0.2)"
-                strokeWidth="3.2"
-                strokeLinecap="round"
+            {/* المسار الخلفي الداكن الهادئ */}
+            <div className="w-full h-1.5 rounded-full bg-zinc-800/90 group-hover:bg-zinc-700/80 transition-colors overflow-hidden relative">
+              {/* التدرج اللوني الثابت: يبدأ كهرمانياً داكناً ويتحول لذهب مشع وأبيض شمسي فاتح عند الرأس */}
+              <div
+                style={{
+                  width: `${progressPercent}%`,
+                  background: 'linear-gradient(90deg, #9a3412 0%, #ea580c 25%, #f59e0b 60%, #fde047 88%, #fffbeb 100%)',
+                }}
+                className="h-full rounded-full shadow-[0_0_8px_rgba(245,158,11,0.4)]"
               />
-              <g clipPath="url(#oneUiSurfaceClip)">
-                <path
-                  d={ONE_UI_SURFACE_PATH}
-                  fill="none"
-                  stroke="url(#oneUiSurfaceGrad)"
-                  strokeWidth="3.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className={isPlaying ? 'animate-oneui-surface' : ''}
-                />
-              </g>
-            </svg>
+            </div>
+
+            {/* مقبض التوقيت الدائري الأبيض الناصع مع هالة مضيئة ناعمة وثابتة */}
             <div
-              style={{ left: `${progressPercent}%`, top: '16px' }}
-              className="absolute -translate-y-1/2 -translate-x-1/2 pointer-events-none flex items-center justify-center transition-all duration-75"
+              style={{ left: `${progressPercent}%` }}
+              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 pointer-events-none flex items-center justify-center transition-all duration-75"
             >
-              <div className="w-3.5 h-3.5 rounded-full bg-amber-400 border-2 border-white shadow-md flex items-center justify-center">
-                <div className="w-1 h-1 rounded-full bg-amber-600" />
+              <div className="relative w-3.5 h-3.5 rounded-full bg-white shadow-[0_0_10px_rgba(251,191,36,0.6)] border-2 border-amber-400 flex items-center justify-center group-hover:scale-125 transition-transform">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
               </div>
             </div>
           </div>
+
           <span className="w-10 text-left font-medium">{formatTime(duration)}</span>
         </div>
 
@@ -704,7 +650,7 @@ export default function Player() {
               {playbackRate}x
             </button>
 
-            {/* زر مؤقت النوم الجديد مع العداد التنازلي الحي */}
+            {/* زر مؤقت النوم */}
             <div className="flex items-center gap-1.5 relative">
               <button
                 onClick={() => setShowSleepMenu(!showSleepMenu)}
@@ -715,7 +661,7 @@ export default function Player() {
               >
                 <Moon className="w-3.5 h-3.5" />
                 {timerActive && stopAtEndOfVideo && (
-                  <span className="text-[10px] font-bold">🔚</span>
+                  <span className="text-[10px] font-bold">نهاية الفيديو</span>
                 )}
               </button>
               {timerActive && sleepTimerTimeLeft !== null && (

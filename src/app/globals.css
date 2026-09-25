@@ -2,19 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
-/* نبض وتوهج الصوت المتنفس (Voice Breathing Glow) */
-@keyframes voiceTrackBreath {
-  0%, 100% {
-    filter: drop-shadow(0 0 2px rgba(245, 158, 11, 0.4));
-    opacity: 0.85;
-  }
-  50% {
-    filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.85));
-    opacity: 1;
-  }
+/* اللمعة الناعمة لشريط الصوت الاستوديو */
+@keyframes ambientTrackShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
-/* اهتزاز مؤشر المايكروفون الصوتي (Mic Pulse Ring) */
+.animate-track-shimmer {
+  background-size: 200% 100%;
+  animation: ambientTrackShimmer 2.8s ease-in-out infinite;
+}
+
+/* نبض مؤشر الصوت الهادئ */
 @keyframes micVoicePulse {
   0%, 100% {
     transform: scale(1);
@@ -26,12 +25,8 @@
   }
 }
 
-.animate-voice-breath {
-  animation: voiceTrackBreath 2.4s ease-in-out infinite;
-}
-
 .animate-mic-pulse {
-  animation: micVoicePulse 1.6s ease-out infinite;
+  animation: micVoicePulse 1.8s ease-out infinite;
 }
 
 /* الظهور المتتابع للبطاقات */

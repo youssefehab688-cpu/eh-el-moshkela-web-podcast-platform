@@ -27,10 +27,7 @@ export default function EpisodeDetailPage() {
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // وضع العرض: video | audio
   const [mediaMode, setMediaMode] = useState<'video' | 'audio'>('video');
-
-  // وضع التركيز السينمائي
   const [isFocusMode, setIsFocusMode] = useState(false);
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -39,14 +36,15 @@ export default function EpisodeDetailPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
 
-  // مؤقت النوم (Sleep Timer)
+  // مؤقت النوم اللحظي
   const [sleepTimerMinutes, setSleepTimerMinutes] = useState<number | null>(null);
   const [sleepTimerTimeLeft, setSleepTimerTimeLeft] = useState<number | null>(null);
   const sleepTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [stopAtEndOfVideo, setStopAtEndOfVideo] = useState(false);
+  const stopAtEndOfVideoRef = useRef(false);
   const [showSleepMenu, setShowSleepMenu] = useState(false);
 
-  // الملاحظات والمحفوظات السحابية والمحلية
+  // الملاحظات والمحفوظات السحابية
   const [notes, setNotes] = useState<{ id: string; timestamp: number; content: string }[]>([]);
   const [newNoteContent, setNewNoteContent] = useState('');
   const [isBookmarked, setIsBookmarked] = useState(false);
@@ -116,10 +114,9 @@ export default function EpisodeDetailPage() {
     loadEpisode();
   }, [rawSlug]);
 
-  // جلب الملاحظات والمحفوظات بطريقة آمنة لـ TypeScript
   useEffect(() => {
     if (!episode) return;
-    const currentEp = episode; // تثبيت النوع ومنع TS18047
+    const currentEp = episode;
 
     async function syncNotesAndBookmarks() {
       if (user) {
@@ -222,11 +219,12 @@ export default function EpisodeDetailPage() {
                 setIsPlaying(false);
                 stopTimeTracking();
               } else if (event.data === 0) {
-                if (stopAtEndOfVideo) {
+                if (stopAtEndOfVideoRef.current) {
                   setIsPlaying(false);
                   stopTimeTracking();
                   setSleepTimerMinutes(null);
                   setStopAtEndOfVideo(false);
+                  stopAtEndOfVideoRef.current = false;
                 }
               }
             },
@@ -251,7 +249,7 @@ export default function EpisodeDetailPage() {
         try { playerRef.current.destroy(); } catch (e) {}
       }
     };
-  }, [episode?.youtube_video_id, initialTimeParam, stopAtEndOfVideo]);
+  }, [episode?.youtube_video_id, initialTimeParam]);
 
   const startTimeTracking = () => {
     stopTimeTracking();
@@ -319,15 +317,18 @@ export default function EpisodeDetailPage() {
       setSleepTimerMinutes(null);
       setSleepTimerTimeLeft(null);
       setStopAtEndOfVideo(false);
+      stopAtEndOfVideoRef.current = false;
       return;
     }
 
     if (mins === 'end') {
       setStopAtEndOfVideo(true);
+      stopAtEndOfVideoRef.current = true;
       setSleepTimerMinutes(null);
       setSleepTimerTimeLeft(null);
     } else {
       setStopAtEndOfVideo(false);
+      stopAtEndOfVideoRef.current = false;
       setSleepTimerMinutes(mins);
       const seconds = mins * 60;
       setSleepTimerTimeLeft(seconds);
@@ -483,6 +484,7 @@ export default function EpisodeDetailPage() {
     );
   }
 
+  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
   const timerActive = sleepTimerMinutes !== null || stopAtEndOfVideo;
 
   return (
@@ -535,9 +537,6 @@ export default function EpisodeDetailPage() {
 
                 <div className="relative z-20 flex flex-col items-center gap-3">
                   <div className="relative">
-                    {isPlaying && (
-                      <div className="absolute -inset-2 bg-amber-400/20 blur-md rounded-2xl animate-pulse" />
-                    )}
                     <img
                       src={`https://img.youtube.com/vi/${episode.youtube_video_id}/hqdefault.jpg`}
                       alt={episode.title}
@@ -614,6 +613,7 @@ export default function EpisodeDetailPage() {
                 )}
               </button>
 
+              {/* زر مؤقت النوم */}
               <div className="relative">
                 <button
                   onClick={() => setShowSleepMenu(!showSleepMenu)}
@@ -622,7 +622,7 @@ export default function EpisodeDetailPage() {
                   }`}
                 >
                   <Moon className="w-3.5 h-3.5" />
-                  {timerActive && stopAtEndOfVideo && <span className="text-[10px] font-bold">🔚</span>}
+                  {timerActive && stopAtEndOfVideo && <span className="text-[10px] font-bold">نهاية الفيديو</span>}
                   {timerActive && sleepTimerTimeLeft !== null ? (
                     <span className="font-mono text-amber-300">{formatTimerLeft(sleepTimerTimeLeft)}</span>
                   ) : (
@@ -650,7 +650,7 @@ export default function EpisodeDetailPage() {
                         stopAtEndOfVideo ? 'bg-amber-400 text-zinc-950' : 'text-zinc-300 hover:bg-zinc-800'
                       }`}
                     >
-                      لنهاية الفيديو 🔚
+                      نهاية الفيديو
                     </button>
                     {timerActive && (
                       <button
@@ -698,6 +698,7 @@ export default function EpisodeDetailPage() {
           </div>
         </div>
 
+        {/* قسم التدوين */}
         <div className="space-y-4 pt-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
