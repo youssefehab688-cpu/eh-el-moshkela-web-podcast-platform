@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { Episode } from '@/types';
 import { usePlayerStore } from '@/store/usePlayerStore';
@@ -22,6 +23,13 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
   const completed = isCompleted(episode.id);
   const bookmarked = isBookmarked(episode.id);
 
+  // جلب الغلاف الأصلي فائق الجودة من يوتيوب مباشرة
+  const initialThumb = episode.youtube_video_id
+    ? `https://img.youtube.com/vi/${episode.youtube_video_id}/maxresdefault.jpg`
+    : episode.thumbnail_url;
+
+  const [imgSrc, setImgSrc] = useState(initialThumb);
+
   const handleToggleComplete = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -39,14 +47,20 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
   };
 
   return (
-    <div className={`group relative flex flex-col rounded-3xl bg-zinc-900/60 border overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl ${
+    <div className={`group relative flex flex-col rounded-3xl bg-zinc-900/50 border overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl ${
       completed ? 'border-emerald-500/30 bg-emerald-950/10' : 'border-zinc-800/80 hover:border-zinc-700'
     }`}>
-      {/* صورة الغلاف */}
-      <div className="relative aspect-video w-full overflow-hidden bg-zinc-800">
+      {/* صورة الغلاف الرسمية من يوتيوب */}
+      <div className="relative aspect-video w-full overflow-hidden bg-zinc-900">
         <img
-          src={episode.thumbnail_url}
+          src={imgSrc}
           alt={episode.title}
+          onError={() => {
+            // في حال لم يكن متاحاً بدقة maxresdefault يتحول تلقائياً لـ hqdefault
+            if (episode.youtube_video_id) {
+              setImgSrc(`https://img.youtube.com/vi/${episode.youtube_video_id}/hqdefault.jpg`);
+            }
+          }}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
 
@@ -60,7 +74,7 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
             className={`p-2 rounded-xl backdrop-blur-md transition-all ${
               completed
                 ? 'bg-emerald-500 text-zinc-950 shadow-lg shadow-emerald-500/20'
-                : 'bg-zinc-950/60 text-zinc-300 hover:text-white hover:bg-zinc-900/80'
+                : 'bg-zinc-950/70 text-zinc-300 hover:text-white hover:bg-zinc-900'
             }`}
           >
             <Check className="w-3.5 h-3.5 stroke-[3]" />
@@ -72,14 +86,14 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
             className={`p-2 rounded-xl backdrop-blur-md transition-all ${
               bookmarked
                 ? 'bg-amber-400 text-zinc-950 shadow-lg'
-                : 'bg-zinc-950/60 text-zinc-300 hover:text-white hover:bg-zinc-900/80'
+                : 'bg-zinc-950/70 text-zinc-300 hover:text-white hover:bg-zinc-900'
             }`}
           >
             <Bookmark className="w-3.5 h-3.5 fill-current" />
           </button>
         </div>
 
-        {/* المدة الزمنية والبرنامج */}
+        {/* رقم الموسم والمدة */}
         <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-[11px] font-bold">
           <span className="px-2 py-0.5 rounded-lg bg-zinc-950/80 backdrop-blur-md text-slate-300 border border-zinc-800/80">
             {episode.program === 'ala-el-maghreb' ? `عالـمغرب • م${episode.season}` : `الموسم ${episode.season}`} • ح{episode.episode_number}

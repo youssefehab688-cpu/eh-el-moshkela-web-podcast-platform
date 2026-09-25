@@ -9,9 +9,9 @@ import EpisodeCard from '@/components/EpisodeCard';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { 
   Search, X, Radio, Moon, 
-  Sparkles, Layers, CheckCircle2, RotateCcw, Play, Headphones, Clock
+  Layers, CheckCircle2, RotateCcw, Play, Headphones, 
+  Sparkles, ArrowDown, Folder
 } from 'lucide-react';
-import { formatTime } from '@/lib/utils';
 
 const TOPICS = [
   'الكل',
@@ -117,133 +117,134 @@ export default function HomePage() {
   };
 
   const isFiltered = searchQuery !== '' || selectedProgram !== 'all' || selectedSeason !== 'all' || selectedTopic !== 'الكل';
-
-  // الحلقة المميزة للبنر البانورامي (Featured Spotlight)
-  const featuredEpisode = episodes.length > 0 ? episodes[0] : null;
+  const latestEpisode = episodes.length > 0 ? episodes[0] : null;
 
   return (
-    <main className="min-h-screen bg-[#08090d] text-zinc-100 flex flex-col pb-36 selection:bg-amber-400 selection:text-zinc-950">
+    <main className="min-h-screen bg-[#07080b] text-zinc-100 flex flex-col pb-36 selection:bg-amber-400 selection:text-zinc-950">
       <Navbar />
 
-      {/* Hero Section البانورامي مع الإضاءة السينمائية */}
-      <section className="relative overflow-hidden border-b border-zinc-800/60 pt-10 pb-12 sm:pt-16 sm:pb-16 px-4 sm:px-8 lg:px-12">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-[1720px] h-full pointer-events-none overflow-hidden">
-          <div className="absolute -top-40 right-10 sm:right-1/4 w-96 sm:w-[650px] h-96 sm:h-[650px] bg-amber-500/10 rounded-full blur-[160px] pointer-events-none" />
-          <div className="absolute -top-40 left-10 sm:left-1/4 w-96 sm:w-[650px] h-96 sm:h-[650px] bg-indigo-500/10 rounded-full blur-[170px] pointer-events-none" />
-          <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:28px_28px] opacity-25" />
+      {/* الهيرو السينمائي */}
+      <section className="relative w-full min-h-[75vh] sm:min-h-[82vh] flex items-center justify-start overflow-hidden border-b border-zinc-800/80 pt-24 pb-14 px-5 sm:px-12 lg:px-20">
+        
+        {/* خلفية الاستوديو */}
+        <div className="absolute inset-0 z-0">
+          <img
+            src="/hero-banner.jpg"
+            alt="بودكاست إيه المشكلة"
+            onError={(e) => {
+              if (latestEpisode?.youtube_video_id) {
+                (e.target as HTMLImageElement).src = `https://img.youtube.com/vi/${latestEpisode.youtube_video_id}/maxresdefault.jpg`;
+              }
+            }}
+            className="h-full w-full object-cover object-center filter brightness-[0.8] contrast-[1.08] transition-transform duration-1000"
+          />
+
+          <div className="absolute inset-0 bg-gradient-to-t from-[#07080b] via-[#07080b]/50 to-black/30" />
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#07080b]/60 to-[#07080b]/95" />
         </div>
 
-        <div className="mx-auto max-w-5xl text-center relative z-10 flex flex-col items-center gap-5">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-zinc-900/90 border border-zinc-700/60 text-xs font-bold text-zinc-300 shadow-2xl backdrop-blur-xl">
+        {/* محتوى الهيرو */}
+        <div className="relative z-10 w-full max-w-2xl flex flex-col items-start text-right gap-4 sm:gap-5">
+          
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-zinc-950/70 border border-white/15 text-[11px] font-bold text-zinc-300 backdrop-blur-md shadow-lg">
             <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-            <span>المكتبة الشاملة الموثقة • {episodes.length || 161} حلقة بدقة عالية</span>
+            <span>بودكاست إيه المشكلة؟ وعالـمغرب</span>
           </div>
 
-          <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-black text-white tracking-tight leading-[1.15]">
-            بودكاست <span className="text-transparent bg-clip-text bg-gradient-to-b from-white via-zinc-200 to-zinc-400">إيه المشكلة؟</span> <br className="hidden sm:inline" />
-            و <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-400 to-yellow-500">عالـمغرب</span>
+          <h1 className="text-2xl sm:text-4xl lg:text-[44px] font-black text-white tracking-tight leading-normal sm:leading-relaxed drop-shadow-2xl">
+            مساحات لفهم النفس والواقع
+            <span className="block mt-3 sm:mt-4 pt-1 text-zinc-100">
+              وإصلاح ما بيننا وبين الله
+            </span>
           </h1>
 
-          <p className="text-xs sm:text-sm md:text-base text-zinc-400 max-w-2xl leading-relaxed font-normal">
-            المكان المخصص للاستماع الهادئ والتدوين التفاعلي؛ بدون خوارزميات أو مشتتات جانبية.
+          <p className="text-xs sm:text-sm text-zinc-300 max-w-xl leading-relaxed font-normal drop-shadow">
+            د. محمد الغليظ، د. أمير منير، ود. ياسر ممدوح يطرحون أسئلة الشباب الملحة في الدين، العلاقات، وتحديات الحياة المعاصرة برؤية عملية هادئة.
           </p>
 
-          {/* شريط البحث البانورامي */}
-          <div className="w-full max-w-2xl mt-2">
-            <div className="relative flex items-center group">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="ابحث عن حلقة، فكرة، موضوع، أو رقم موسم..."
-                className="w-full bg-zinc-900/70 border border-zinc-700/70 hover:border-zinc-500 focus:border-amber-400/80 rounded-2xl py-3.5 sm:py-4 pr-12 pl-12 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 shadow-2xl shadow-black/80 focus:outline-none transition-all duration-300 backdrop-blur-xl group-hover:bg-zinc-900/90"
-              />
-              <Search className="w-5 h-5 text-zinc-400 absolute right-4 pointer-events-none group-focus-within:text-amber-400 transition-colors" />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute left-3.5 text-zinc-400 hover:text-white p-1 rounded-xl hover:bg-zinc-800 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            {latestEpisode && (
+              <button
+                onClick={() => playEpisode(latestEpisode, 'video')}
+                className="flex items-center gap-2 px-6 py-2.5 sm:py-3 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 font-black text-xs sm:text-sm transition-all shadow-xl active:scale-95"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>استمع لأحدث حلقة</span>
+              </button>
+            )}
+
+            <a
+              href="#series"
+              className="flex items-center gap-2 px-5 py-2.5 sm:py-3 rounded-full bg-zinc-900/80 hover:bg-zinc-800 border border-white/20 text-white font-bold text-xs sm:text-sm backdrop-blur-md transition-all active:scale-95"
+            >
+              <ArrowDown className="w-3.5 h-3.5 text-zinc-400" />
+              <span>تصفح كل المواسم</span>
+            </a>
+          </div>
+
+          {/* شريط الإحصائيات: 6 + 3 مواسم */}
+          <div className="flex items-center gap-4 sm:gap-6 pt-3 border-t border-white/10 w-full max-w-md">
+            <div className="flex items-center gap-2 text-zinc-300">
+              <Headphones className="w-4 h-4 text-amber-400" />
+              <span className="text-xs sm:text-sm font-black text-white font-mono">{episodes.length || 161}</span>
+              <span className="text-[11px] text-zinc-400">حلقة</span>
             </div>
+
+            <div className="h-3 w-px bg-white/20" />
+
+            <div className="flex items-center gap-2 text-zinc-300">
+              <Layers className="w-4 h-4 text-sky-400" />
+              <span className="text-xs sm:text-sm font-black text-white font-mono">6 + 3</span>
+              <span className="text-[11px] text-zinc-400">مواسم</span>
+            </div>
+
+            <div className="h-3 w-px bg-white/20" />
+
+            <div className="flex items-center gap-2 text-zinc-300">
+              <Folder className="w-4 h-4 text-emerald-400" />
+              <span className="text-xs sm:text-sm font-black text-white font-mono">6</span>
+              <span className="text-[11px] text-zinc-400">مواضيع</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* قسم الفهرسة والحلقات */}
+      <section id="series" className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 pt-8 flex flex-col gap-6">
+        
+        <div className="w-full max-w-2xl mx-auto">
+          <div className="relative flex items-center group">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="ابحث عن حلقة، فكرة، موضوع، أو رقم موسم..."
+              className="w-full bg-zinc-900/80 border border-zinc-700/80 hover:border-zinc-500 focus:border-amber-400/90 rounded-2xl py-3.5 pr-11 pl-11 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-500 shadow-xl focus:outline-none transition-all duration-300 backdrop-blur-xl"
+            />
+            <Search className="w-4 h-4 text-zinc-400 absolute right-3.5 pointer-events-none group-focus-within:text-amber-400 transition-colors" />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute left-3 text-zinc-400 hover:text-white p-1 rounded-xl hover:bg-zinc-800 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
-        {/* البنر البانورامي السينمائي (يظهر بشكل عريض وفخم في وضع الديسك توب واللابتوب) */}
-        {featuredEpisode && !isFiltered && (
-          <div className="mx-auto max-w-[1720px] mt-10 hidden md:block">
-            <div className="relative overflow-hidden rounded-3xl border border-zinc-800/80 bg-gradient-to-r from-zinc-950 via-zinc-900 to-zinc-950 p-6 lg:p-8 flex items-center justify-between gap-8 shadow-2xl">
-              <div className="flex flex-col gap-3 max-w-2xl z-10">
-                <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
-                  <span className="px-2.5 py-1 rounded-lg bg-amber-400/10 border border-amber-400/20">
-                    حلقة بارزة
-                  </span>
-                  <span>{featuredEpisode.program === 'ala-el-maghreb' ? 'برنامج عالـمغرب' : `الموسم ${featuredEpisode.season}`} • حلقة {featuredEpisode.episode_number}</span>
-                </div>
-
-                <h2 className="text-xl lg:text-3xl font-black text-white leading-tight">
-                  {featuredEpisode.title}
-                </h2>
-
-                <p className="text-xs lg:text-sm text-zinc-400 line-clamp-2 leading-relaxed">
-                  {featuredEpisode.description || 'استمع وشاهد الحلقة كاملة بجودة عالية مع إمكانية حفظ الفوائد والملاحظات الزمنية المتزامنة.'}
-                </p>
-
-                <div className="flex items-center gap-3 pt-2">
-                  <button
-                    onClick={() => playEpisode(featuredEpisode, 'video')}
-                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-zinc-950 font-black text-xs transition-transform active:scale-95 shadow-lg"
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    <span>مشاهدة الفيديو</span>
-                  </button>
-
-                  <button
-                    onClick={() => playEpisode(featuredEpisode, 'audio')}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 font-bold text-xs transition-colors"
-                  >
-                    <Headphones className="w-4 h-4" />
-                    <span>استماع صوتي</span>
-                  </button>
-
-                  <span className="text-xs font-mono text-zinc-400 flex items-center gap-1 mr-2">
-                    <Clock className="w-3.5 h-3.5 text-zinc-500" />
-                    {formatTime(featuredEpisode.duration_seconds)}
-                  </span>
-                </div>
-              </div>
-
-              {/* غلاف الحلقة العريض بصيغة لاند سكيب */}
-              <div className="relative h-56 lg:h-64 w-96 lg:w-[460px] rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl flex-shrink-0">
-                <img
-                  src={featuredEpisode.thumbnail_url}
-                  alt={featuredEpisode.title}
-                  className="h-full w-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/60 to-transparent" />
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* قسم الفهرس وعرض الحلقات البانورامي الواسع */}
-      <section id="series" className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 pt-8 flex flex-col gap-6">
-        
-        {/* شريط الفلاتر الذكي بتصميم ممتد */}
-        <div className="flex flex-col gap-4 bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-4 sm:p-6 backdrop-blur-sm shadow-xl">
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-zinc-800/60">
+        <div className="flex flex-col gap-3.5 bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-4 sm:p-5 backdrop-blur-sm shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-800/60">
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-bold text-zinc-300">السلسلة:</span>
+              <span className="text-xs font-bold text-zinc-300">البرنامج:</span>
             </div>
 
             <div className="flex items-center gap-1.5 bg-zinc-950/80 p-1 rounded-xl border border-zinc-800/80">
               <button
                 onClick={() => { setSelectedProgram('all'); setSelectedSeason('all'); }}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`px-3.5 py-1 rounded-lg text-xs font-bold transition-all ${
                   selectedProgram === 'all'
                     ? 'bg-zinc-100 text-zinc-950 shadow'
                     : 'text-zinc-400 hover:text-white'
@@ -254,7 +255,7 @@ export default function HomePage() {
 
               <button
                 onClick={() => { setSelectedProgram('eh-el-moshkla'); setSelectedSeason('all'); }}
-                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
                   selectedProgram === 'eh-el-moshkla'
                     ? 'bg-zinc-100 text-zinc-950 shadow'
                     : 'text-zinc-400 hover:text-white'
@@ -266,7 +267,7 @@ export default function HomePage() {
 
               <button
                 onClick={() => { setSelectedProgram('ala-el-maghreb'); setSelectedSeason('all'); }}
-                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
                   selectedProgram === 'ala-el-maghreb'
                     ? 'bg-amber-400 text-zinc-950 shadow font-black'
                     : 'text-zinc-400 hover:text-amber-400'
@@ -278,9 +279,8 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* فلاتر المواسم */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-zinc-400 ml-2">الموسم:</span>
+            <span className="text-xs font-bold text-zinc-400 ml-1">الموسم:</span>
             <button
               onClick={() => setSelectedSeason('all')}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border ${
@@ -307,9 +307,8 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* فلاتر الموضوعات */}
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800/60">
-            <span className="text-xs font-bold text-zinc-400 ml-2">الموضوع:</span>
+            <span className="text-xs font-bold text-zinc-400 ml-1">الموضوع:</span>
             {TOPICS.map((topic) => (
               <button
                 key={topic}
@@ -326,8 +325,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* إحصائيات الفلترة */}
-        <div className="flex items-center justify-between text-xs text-zinc-400 px-2">
+        <div className="flex items-center justify-between text-xs text-zinc-400 px-1">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             <span>عرض <strong className="text-white font-mono">{filteredEpisodes.length}</strong> حلقة</span>
@@ -345,14 +343,12 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* شبكة الحلقات البانورامية فائقة الاتساع: 
-            1 للموبايل -> 2 للتابلت -> 3 للابتوب -> 4 للشاشات الكبيرة -> 5 للشاشات العريضة جداً */}
         {loading ? (
           <div className="flex items-center justify-center py-24">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-400"></div>
           </div>
         ) : filteredEpisodes.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-5 sm:gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-4 sm:gap-5">
             {filteredEpisodes.map((episode) => (
               <EpisodeCard key={episode.id} episode={episode} />
             ))}
