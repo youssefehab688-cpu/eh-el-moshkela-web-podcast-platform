@@ -9,7 +9,7 @@ import EpisodeCard from '@/components/EpisodeCard';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { 
   Search, X, Radio, Moon, 
-  Sparkles, Layers, CheckCircle2, RotateCcw
+  Sparkles, Layers, CheckCircle2, RotateCcw, AlertTriangle
 } from 'lucide-react';
 
 const TOPICS = [
@@ -35,6 +35,7 @@ function normalizeArabic(text: string): string {
 export default function HomePage() {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [loading, setLoading] = useState(true);
+  const [supabaseError, setSupabaseError] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProgram, setSelectedProgram] = useState<'all' | 'eh-el-moshkla' | 'ala-el-maghreb'>('all');
@@ -43,16 +44,27 @@ export default function HomePage() {
 
   const { setPlaylist } = usePlayerStore();
 
+  const isUrlConfigured = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const isKeyConfigured = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
   useEffect(() => {
     async function fetchEpisodes() {
       try {
+        if (!isUrlConfigured || !isKeyConfigured) {
+          setSupabaseError('المتغيرات البيئية NEXT_PUBLIC_SUPABASE_URL أو ANON_KEY غير مقروءة في Vercel');
+          setLoading(false);
+          return;
+        }
+
         const { data, error } = await supabase
           .from('episodes')
           .select('*')
           .order('season', { ascending: true })
           .order('episode_number', { ascending: true });
 
-        if (!error && data) {
+        if (error) {
+          setSupabaseError(`خطأ من Supabase: ${error.message} (رمز: ${error.code || 'بدون كود'})`);
+        } else if (data) {
           const sorted = [...data].sort((a: Episode, b: Episode) => {
             if (a.program !== b.program) {
               return a.program === 'eh-el-moshkla' ? -1 : 1;
@@ -66,14 +78,14 @@ export default function HomePage() {
           setEpisodes(sorted);
           setPlaylist(sorted);
         }
-      } catch (err) {
-        console.error('Error fetching episodes:', err);
+      } catch (err: any) {
+        setSupabaseError(`فشل الاتصال: ${err.message || err}`);
       } finally {
         setLoading(false);
       }
     }
     fetchEpisodes();
-  }, [setPlaylist]);
+  }, [setPlaylist, isUrlConfigured, isKeyConfigured]);
 
   const availableSeasons = useMemo(() => {
     if (selectedProgram === 'eh-el-moshkla') return [1, 2, 3, 4, 5, 6];
@@ -85,17 +97,9 @@ export default function HomePage() {
     const normSearch = normalizeArabic(searchQuery);
 
     return episodes.filter((ep) => {
-      if (selectedProgram !== 'all' && ep.program !== selectedProgram) {
-        return false;
-      }
-
-      if (selectedSeason !== 'all' && Number(ep.season) !== Number(selectedSeason)) {
-        return false;
-      }
-
-      if (selectedTopic !== 'الكل' && ep.topic !== selectedTopic) {
-        return false;
-      }
+      if (selectedProgram !== 'all' && ep.program !== selectedProgram) return false;
+      if (selectedSeason !== 'all' && Number(ep.season) !== Number(selectedSeason)) return false;
+      if (selectedTopic !== 'الكل' && ep.topic !== selectedTopic) return false;
 
       if (normSearch) {
         const titleNorm = normalizeArabic(ep.title);
@@ -109,9 +113,7 @@ export default function HomePage() {
         const matchesDesc = descNorm.includes(normSearch);
         const matchesNumber = normSearch.includes(`حلقة ${epNumStr}`) || normSearch.includes(`موسم ${seasonNumStr}`);
 
-        if (!matchesTitle && !matchesTopic && !matchesDesc && !matchesNumber) {
-          return false;
-        }
+        if (!matchesTitle && !matchesTopic && !matchesDesc && !matchesNumber) return false;
       }
 
       return true;
@@ -131,14 +133,20 @@ export default function HomePage() {
     <main className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col pb-36">
       <Navbar />
 
-      {/* Hero Section: إزالة كلمة برنامج واعتماد العنوان المباشر */}
-      <section className="relative overflow-hidden border-b border-zinc-800/80 bg-gradient-to-b from-zinc-900/50 via-zinc-950 to-zinc-950 py-12 sm:py-16 px-4 sm:px-6">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-zinc-800/20 via-transparent to-transparent pointer-events-none" />
+      {/* تنبيه الخطأ المباشر للتشخيص */}
+      {supabaseError && (
+        <div className="bg-red-950/80 border-b border-red-800 text-red-200 px-4 py-3 text-xs sm:text-sm text-center flex items-center justify-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+          <span><strong>تقرير الاتصال:</strong> {supabaseError}</span>
+        </div>
+      )}
 
+      {/* Hero Section */}
+      <section className="relative overflow-hidden border-b border-zinc-800/80 bg-gradient-to-b from-zinc-900/50 via-zinc-950 to-zinc-950 py-12 sm:py-16 px-4 sm:px-6">
         <div className="container mx-auto max-w-5xl text-center relative z-10 flex flex-col items-center gap-4">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-bold text-slate-300 shadow-inner">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>المكتبة الشاملة الموثقة • 161 حلقة كاملة</span>
+            <span>المكتبة الشاملة الموثقة • {episodes.length} حلقة</span>
           </div>
 
           <h1 className="text-3xl sm:text-5xl md:text-6xl font-black text-white tracking-tight leading-tight">
@@ -173,12 +181,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* شريط الفلاتر */}
+      {/* شريط الفلاتر وعرض الحلقات */}
       <section id="series" className="container mx-auto max-w-7xl px-4 sm:px-6 pt-8 flex flex-col gap-6">
         
         <div className="flex flex-col gap-4 bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-4 sm:p-6 backdrop-blur-sm shadow-xl">
-          
-          {/* تبديل السلاسل */}
           <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-zinc-800/60">
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-slate-300" />
@@ -206,7 +212,7 @@ export default function HomePage() {
                 }`}
               >
                 <Radio className="w-3.5 h-3.5" />
-                <span>إيه المشكلة (6 مواسم)</span>
+                <span>إيه المشكلة</span>
               </button>
 
               <button
@@ -218,12 +224,11 @@ export default function HomePage() {
                 }`}
               >
                 <Moon className="w-3.5 h-3.5" />
-                <span>عالـمغرب (3 مواسم)</span>
+                <span>عالـمغرب</span>
               </button>
             </div>
           </div>
 
-          {/* فلترة المواسم */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-zinc-400 ml-2">الموسم:</span>
             <button
@@ -252,7 +257,6 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* تصنيف الموضوعات */}
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800/60">
             <span className="text-xs font-bold text-zinc-400 ml-2">الموضوع:</span>
             {TOPICS.map((topic) => (
@@ -269,10 +273,8 @@ export default function HomePage() {
               </button>
             ))}
           </div>
-
         </div>
 
-        {/* شريط الإحصاءات */}
         <div className="flex items-center justify-between text-xs text-zinc-400 px-2">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -291,7 +293,6 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* شبكة الحلقات */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-300"></div>
@@ -305,19 +306,12 @@ export default function HomePage() {
         ) : (
           <div className="flex flex-col items-center justify-center py-20 px-4 text-center bg-zinc-900/30 border border-dashed border-zinc-800 rounded-3xl gap-3">
             <Search className="w-10 h-10 text-zinc-600" />
-            <h3 className="text-base font-bold text-white">لم يتم العثور على أي حلقة مطابقة</h3>
+            <h3 className="text-base font-bold text-white">لم يتم العثور على أي حلقة</h3>
             <p className="text-xs text-zinc-400 max-w-md">
-              جرّب تغيير كلمات البحث أو اختر "جميع الحلقات" و "كل المواسم" لعرض كامل المكتبة.
+              {supabaseError ? 'يوجد خطأ في الاتصال بقاعدة البيانات، راجع التنبيه بالأعلى' : 'جرّب إعادة تعيين الفلاتر أو تغيير كلمة البحث'}
             </p>
-            <button
-              onClick={handleResetFilters}
-              className="mt-2 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-white transition-colors"
-            >
-              إعادة تعيين البحث
-            </button>
           </div>
         )}
-
       </section>
 
       <Player />
