@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { 
   Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, 
-  SkipBack, SkipForward, X, Maximize2, Moon
+  SkipBack, SkipForward, X, Maximize2, Moon, Link2, Check
 } from 'lucide-react';
 
 export default function Player() {
@@ -24,8 +24,9 @@ export default function Player() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [sleepTimer, setSleepTimer] = useState<number | null>(null); // بالدقائق
+  const [sleepTimer, setSleepTimer] = useState<number | null>(null);
   const [showSleepMenu, setShowSleepMenu] = useState(false);
+  const [copiedTimestamp, setCopiedTimestamp] = useState(false);
 
   const playerRef = useRef<any>(null);
   const timeUpdateInterval = useRef<NodeJS.Timeout | null>(null);
@@ -44,7 +45,15 @@ export default function Player() {
     router.push(`/episodes/${targetSlug}`);
   };
 
-  // مؤقت النوم
+  const copyCurrentMomentLink = () => {
+    if (!currentEpisode || typeof window === 'undefined') return;
+    const targetSlug = currentEpisode.slug || currentEpisode.youtube_video_id || currentEpisode.id;
+    const url = `${window.location.origin}/episodes/${targetSlug}?t=${Math.floor(currentTime)}`;
+    navigator.clipboard.writeText(url);
+    setCopiedTimestamp(true);
+    setTimeout(() => setCopiedTimestamp(false), 2500);
+  };
+
   const setTimer = (mins: number | null) => {
     if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
     setSleepTimer(mins);
@@ -83,7 +92,6 @@ export default function Player() {
     }
   }, [currentEpisode, currentTime, duration]);
 
-  // Media Session للتحكم من شاشة القفل
   useEffect(() => {
     if (!currentEpisode || typeof window === 'undefined' || !('mediaSession' in navigator)) return;
 
@@ -291,7 +299,7 @@ export default function Player() {
       {mode === 'audio' && <div id="youtube-player" className="hidden" />}
 
       <div className="flex flex-col gap-2.5 p-2 sm:p-3 relative">
-        {/* نافذة خيارات مؤقت النوم المنبثقة */}
+        {/* قائمة مؤقت النوم */}
         {showSleepMenu && (
           <div className="absolute bottom-full mb-3 left-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-2 shadow-2xl flex flex-col gap-1 z-50 min-w-[140px] text-right">
             <span className="text-[10px] text-zinc-500 font-bold px-2 py-1">مؤقت النوم</span>
@@ -325,7 +333,7 @@ export default function Player() {
               className="w-11 h-11 rounded-xl object-cover flex-shrink-0 border border-zinc-800"
             />
             <div className="flex flex-col min-w-0">
-              <span className="text-xs font-bold text-white truncate max-w-[180px] sm:max-w-xs">
+              <span className="text-xs font-bold text-white truncate max-w-[170px] sm:max-w-xs">
                 {currentEpisode.title}
               </span>
               <span className="text-[11px] text-zinc-400">
@@ -335,13 +343,23 @@ export default function Player() {
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* زر مشاركة اللحظة بالدقيقة الحالية من المشغل */}
+            <button
+              onClick={copyCurrentMomentLink}
+              title="مشاركة رابط اللحظة الحالية"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-xs font-bold text-zinc-300 hover:text-amber-400 transition-colors"
+            >
+              {copiedTimestamp ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Link2 className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{copiedTimestamp ? 'تم النسخ!' : 'مشاركة الدقيقة'}</span>
+            </button>
+
             <button
               onClick={handleOpenEpisodePage}
               title="فتح صفحة الحلقة والملاحظات"
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-xs font-bold text-amber-400 transition-colors"
             >
               <Maximize2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">تدوين الملاحظات</span>
+              <span className="hidden sm:inline">تدوين</span>
             </button>
 
             <button
@@ -374,7 +392,7 @@ export default function Player() {
           <span className="w-10 text-left">{formatTime(duration)}</span>
         </div>
 
-        {/* التحكم السفلي ومؤقت النوم */}
+        {/* أزرار التشغيل ومؤقت النوم */}
         <div dir="ltr" className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-2">
             <button onClick={toggleMute} className="text-zinc-400 hover:text-white p-1">
@@ -388,7 +406,6 @@ export default function Player() {
               {playbackRate}x
             </button>
 
-            {/* زر مؤقت النوم */}
             <button
               onClick={() => setShowSleepMenu(!showSleepMenu)}
               title="مؤقت النوم"

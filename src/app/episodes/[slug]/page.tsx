@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Episode } from '@/types';
 import Navbar from '@/components/Navbar';
@@ -11,7 +11,8 @@ import { usePlayerStore } from '@/store/usePlayerStore';
 import { toPng } from 'html-to-image';
 import { 
   ArrowRight, Bookmark, Share2, BookOpen, 
-  Clock, Download, Maximize, Minimize, Plus, Trash2, BookMarked, ExternalLink
+  Clock, Download, Maximize, Minimize, Plus, Trash2, 
+  BookMarked, ExternalLink, Link2, Check
 } from 'lucide-react';
 
 interface NoteItem {
@@ -28,7 +29,6 @@ interface BookResource {
   link?: string;
 }
 
-// مراجع وكتب افتراضية ذكية حسب موضوع الحلقة
 function getCuratedBooks(topic: string, title: string): BookResource[] {
   const normTitle = (title || '').toLowerCase();
   
@@ -53,7 +53,6 @@ function getCuratedBooks(topic: string, title: string): BookResource[] {
     ];
   }
 
-  // مراجع التزكية العامة
   return [
     { title: 'رسالة في التزكية', author: 'ابن تيمية', note: 'بيان حقيقة طهارة النفس وأثر التوحيد في صلاح القلب.', link: 'https://www.goodreads.com' },
     { title: 'صيد الخاطر', author: 'ابن الجوزي', note: 'خواطر وتأملات راقية في فهم طبائع النفس وتجارب الحياة الواقعية.', link: 'https://www.goodreads.com' }
@@ -68,6 +67,7 @@ function formatSeconds(secs: number) {
 
 export default function EpisodeDetailsPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { user, openAuthModal } = useAuthStore();
   const { playEpisode } = usePlayerStore();
@@ -76,6 +76,7 @@ export default function EpisodeDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [newNoteContent, setNewNoteContent] = useState('');
@@ -86,27 +87,50 @@ export default function EpisodeDetailsPage() {
   const cardRef = useRef<HTMLDivElement>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
-  const slug = params?.slug as string;
+  const rawSlug = params?.slug as string;
 
   useEffect(() => {
     async function loadEpisodeData() {
-      if (!slug) return;
+      if (!rawSlug) return;
+
+      const cleanSlug = decodeURIComponent(rawSlug).trim();
+      const timeFromUrl = searchParams.get('t');
+      if (timeFromUrl) {
+        setNoteTimestamp(parseInt(timeFromUrl, 10) || 0);
+      } else {
+        const seekTarget = localStorage.getItem('eh_el_moshkla_seek_target');
+        if (seekTarget) {
+          setNoteTimestamp(Math.floor(parseFloat(seekTarget)));
+          localStorage.removeItem('eh_el_moshkla_seek_target');
+        }
+      }
 
       try {
-        const { data, error } = await supabase
-          .from('episodes')
-          .select('*')
-          .or(`slug.eq.${slug},id.eq.${slug}`)
-          .single();
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanSlug);
 
-        if (!error && data) {
+        let query = supabase.from('episodes').select('*');
+        if (isUuid) {
+          query = query.or(`id.eq.${cleanSlug},slug.eq.${cleanSlug},youtube_video_id.eq.${cleanSlug}`);
+        } else {
+          query = query.or(`slug.eq.${cleanSlug},youtube_video_id.eq.${cleanSlug}`);
+        }
+
+        let { data, error } = await query.maybeSingle();
+
+        // حل احتياطي ذكي: إذا لم يعثر عليه بالرمز الدقيق، يبحث برقم الحلقة أو العنوان
+        if (!data) {
+          const { data: fallback } = await supabase
+            .from('episodes')
+            .select('*')
+            .ilike('title', `%${cleanSlug}%`)
+            .limit(1)
+            .maybeSingle();
+
+          data = fallback;
+        }
+
+        if (data) {
           setEpisode(data);
-
-          const seekTarget = localStorage.getItem('eh_el_moshkla_seek_target');
-          if (seekTarget) {
-            setNoteTimestamp(Math.floor(parseFloat(seekTarget)));
-            localStorage.removeItem('eh_el_moshkla_seek_target');
-          }
         }
       } catch (err) {
         console.error('Error loading episode:', err);
@@ -116,7 +140,7 @@ export default function EpisodeDetailsPage() {
     }
 
     loadEpisodeData();
-  }, [slug]);
+  }, [rawSlug, searchParams]);
 
   useEffect(() => {
     async function fetchUserData() {
@@ -158,6 +182,14 @@ export default function EpisodeDetailsPage() {
       await supabase.from('bookmarks').insert({ user_id: user.id, episode_id: episode.id });
       setIsBookmarked(true);
     }
+  };
+
+  const copyTimestampLink = () => {
+    if (!episode) return;
+    const url = `${window.location.origin}/episodes/${episode.slug || episode.youtube_video_id}?t=${noteTimestamp}`;
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2500);
   };
 
   const handleAddNote = async (e: React.FormEvent) => {
@@ -232,9 +264,10 @@ export default function EpisodeDetailsPage() {
 
   if (!episode) {
     return (
-      <div className="min-h-screen bg-[#07080b] flex flex-col items-center justify-center text-center px-4">
-        <h2 className="text-xl font-bold text-white mb-2">الحلقة غير موجودة</h2>
-        <button onClick={() => router.push('/')} className="text-xs font-bold text-amber-400">العودة للرئيسية</button>
+      <div className="min-h-screen bg-[#07080b] flex flex-col items-center justify-center text-center px-4 gap-3">
+        <h2 className="text-xl font-bold text-white">لم نتمكن من العثور على الحلقة المطلوبة</h2>
+        <p className="text-xs text-zinc-400">ربما تم تغيير الرابط أو تم الوصول عبر بحث غير دقيق.</p>
+        <button onClick={() => router.push('/')} className="px-5 py-2.5 rounded-full bg-white text-zinc-950 font-bold text-xs hover:bg-zinc-200">العودة للرئيسية</button>
       </div>
     );
   }
@@ -288,7 +321,6 @@ export default function EpisodeDetailsPage() {
         </div>
       )}
 
-      {/* محتوى الصفحة */}
       <div className={`mx-auto w-full ${focusMode ? 'max-w-5xl pt-6' : 'max-w-7xl pt-24'} px-4 sm:px-8 transition-all`}>
         <div className="flex items-center justify-between mb-4">
           <button
@@ -300,6 +332,16 @@ export default function EpisodeDetailsPage() {
           </button>
 
           <div className="flex items-center gap-2">
+            {/* زر مشاركة اللحظة بالدقيقة */}
+            <button
+              onClick={copyTimestampLink}
+              title="مشاركة رابط يبدأ من الدقيقة المحددة"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-700/80 text-xs font-bold text-zinc-300 hover:text-amber-400 transition-colors"
+            >
+              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Link2 className="w-3.5 h-3.5" />}
+              <span>{copiedLink ? 'تم نسخ الرابط بالدقيقة!' : 'مشاركة هذه الدقيقة'}</span>
+            </button>
+
             <button
               onClick={() => setFocusMode(!focusMode)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-700/80 text-xs font-bold text-zinc-300 hover:text-white transition-colors"
@@ -322,10 +364,10 @@ export default function EpisodeDetailsPage() {
           </div>
         </div>
 
-        {/* مشغل الفيديو التفاعلي */}
+        {/* عرض الفيديو مع بدء التشغيل التلقائي من الدقيقة المحددة إن وجدت */}
         <div className="relative aspect-video w-full rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl bg-black mb-6">
           <iframe
-            src={`https://www.youtube-nocookie.com/embed/${episode.youtube_video_id}?autoplay=1&rel=0`}
+            src={`https://www.youtube-nocookie.com/embed/${episode.youtube_video_id}?autoplay=1&rel=0&start=${noteTimestamp}`}
             title={episode.title}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
@@ -333,10 +375,7 @@ export default function EpisodeDetailsPage() {
           />
         </div>
 
-        {/* شبكة تفاصيل الحلقة والملاحظات والتوصيات */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* الجانب الأيمن: التفاصيل + قسم الكتب والمراجع المذكورة */}
           <div className="lg:col-span-2 flex flex-col gap-6">
             <div className="flex flex-col gap-2">
               <div className="inline-flex items-center gap-2 text-[11px] font-bold text-amber-400">
@@ -361,7 +400,7 @@ export default function EpisodeDetailsPage() {
               </p>
             )}
 
-            {/* قسم الكتب والتوصيات المذكورة في الحلقة */}
+            {/* قسم الكتب والتوصيات */}
             <div className="flex flex-col gap-3.5 bg-zinc-900/30 border border-zinc-800/80 rounded-3xl p-5">
               <div className="flex items-center gap-2">
                 <BookMarked className="w-4 h-4 text-amber-400" />
@@ -398,7 +437,7 @@ export default function EpisodeDetailsPage() {
             </div>
           </div>
 
-          {/* الجانب الأيسر: صندوق تدوين وحفظ الفوائد */}
+          {/* صندوق تدوين الفوائد */}
           <div className="flex flex-col gap-4 bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-4 sm:p-5 backdrop-blur-md h-fit">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-800/80">
               <div className="flex items-center gap-2">
@@ -417,7 +456,6 @@ export default function EpisodeDetailsPage() {
               )}
             </div>
 
-            {/* كتابة فائدة */}
             <form onSubmit={handleAddNote} className="flex flex-col gap-2">
               <textarea
                 value={newNoteContent}
@@ -450,7 +488,6 @@ export default function EpisodeDetailsPage() {
               </div>
             </form>
 
-            {/* قائمة الفوائد */}
             <div className="flex flex-col gap-2.5 max-h-[380px] overflow-y-auto pr-1">
               {notes.length === 0 ? (
                 <div className="py-8 text-center text-zinc-500 text-xs">

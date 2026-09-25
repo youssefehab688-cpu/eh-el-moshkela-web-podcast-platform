@@ -7,6 +7,7 @@ import Navbar from '@/components/Navbar';
 import Player from '@/components/Player';
 import EpisodeCard from '@/components/EpisodeCard';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { DAILY_QUOTES, QuoteItem } from '@/data/quotes';
 import { 
   Search, X, Radio, Moon, 
   Layers, CheckCircle2, RotateCcw, Play, Headphones, 
@@ -22,30 +23,10 @@ const TOPICS = [
   'شبهات وأسئلة'
 ];
 
-// مسارات استماع موجهة
 const CURATED_PATHS = [
   { id: 'path-faith', title: 'مسار التوبة وترويض النفس', query: 'توبة', icon: '🌱' },
   { id: 'path-marriage', title: 'مسار العلاقات واختيار الشريك', query: 'زواج', icon: '💍' },
   { id: 'path-prayer', title: 'مسار الخشوع والراحة في الصلاة', query: 'صلاة', icon: '🕌' },
-];
-
-// اقتباسات اليوم الذكية
-const DAILY_QUOTES = [
-  {
-    quote: 'العبرة ليست بكمية الذنوب التي تثقلك، بل بسرعة انكسارك ورجوعك إلى الله بعد السقوط.',
-    author: 'د. محمد الغليظ',
-    searchTitle: 'التوبة'
-  },
-  {
-    quote: 'أعظم علاج للشتات هو أن تجعل همومك كلها هماً واحداً: كيف ترضي ربك؟',
-    author: 'د. أمير منير',
-    searchTitle: 'الشتات'
-  },
-  {
-    quote: 'الزواج ليس مجرد حب عاطفي عابر، بل هو شراكة لبناء إنسان يرضي الله في الأرض.',
-    author: 'م. ياسر ممدوح',
-    searchTitle: 'الزواج'
-  }
 ];
 
 function normalizeArabic(text: string): string {
@@ -124,6 +105,16 @@ export default function HomePage() {
     fetchEpisodes();
   }, [setPlaylist]);
 
+  // تحديد اقتباس اليوم: ذكي بناءً على آخر موضوع تم الاستماع إليه أو يوم الشهر
+  const todayQuote: QuoteItem = useMemo(() => {
+    if (lastPlayed?.episode?.topic) {
+      const matched = DAILY_QUOTES.find((q) => q.topic === lastPlayed.episode.topic);
+      if (matched) return matched;
+    }
+    const day = new Date().getDate();
+    return DAILY_QUOTES[day % DAILY_QUOTES.length];
+  }, [lastPlayed]);
+
   const availableSeasons = useMemo(() => {
     if (selectedProgram === 'eh-el-moshkla') return [1, 2, 3, 4, 5, 6];
     if (selectedProgram === 'ala-el-maghreb') return [1, 2, 3];
@@ -174,11 +165,27 @@ export default function HomePage() {
     }
   };
 
+  // تشغيل الاقتباس فوراً عند الثانية المحددة
+  const playQuoteDirectly = (quoteItem: QuoteItem) => {
+    const matched = episodes.find((e) => e.youtube_video_id === quoteItem.youtubeId) || {
+      id: quoteItem.youtubeId,
+      title: quoteItem.titleHint,
+      youtube_video_id: quoteItem.youtubeId,
+      season: 1,
+      episode_number: 1,
+      program: 'eh-el-moshkla',
+    };
+
+    const epToPlay = {
+      ...matched,
+      initialSeekTime: quoteItem.seekSeconds,
+    };
+
+    playEpisode(epToPlay as Episode, 'video');
+  };
+
   const isFiltered = searchQuery !== '' || selectedProgram !== 'all' || selectedSeason !== 'all' || selectedTopic !== 'الكل';
   const latestEpisode = episodes.length > 0 ? episodes[0] : null;
-
-  // اختيار اقتباس اليوم بناءً على اليوم من الشهر
-  const todayQuote = DAILY_QUOTES[new Date().getDate() % DAILY_QUOTES.length];
 
   return (
     <main className="min-h-screen bg-[#07080b] text-zinc-100 flex flex-col pb-36 selection:bg-amber-400 selection:text-zinc-950">
@@ -320,27 +327,34 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* اقتباس اليوم الذكي */}
+      {/* قسم فائدة اليوم الموثق بالثانية الدقيقة */}
       <section className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 pt-6">
-        <div className="rounded-3xl bg-gradient-to-r from-zinc-900/60 via-zinc-900/80 to-zinc-900/60 border border-zinc-800/80 p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 backdrop-blur-md">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-amber-400/10 text-amber-400 border border-amber-400/20 flex-shrink-0">
+        <div className="rounded-3xl bg-gradient-to-r from-zinc-900/60 via-zinc-900/80 to-zinc-900/60 border border-zinc-800/80 p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4 backdrop-blur-md shadow-xl">
+          <div className="flex items-start sm:items-center gap-3 w-full md:w-auto">
+            <div className="p-2.5 rounded-2xl bg-amber-400/10 text-amber-400 border border-amber-400/20 flex-shrink-0 mt-1 sm:mt-0">
               <Quote className="w-5 h-5" />
             </div>
             <div className="flex flex-col">
-              <span className="text-[11px] font-bold text-amber-400">فائدة اليوم</span>
-              <p className="text-xs sm:text-sm text-zinc-200 font-medium leading-relaxed">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-amber-400">فائدة اليوم</span>
+                <span className="text-[10px] text-zinc-500 font-mono">[{todayQuote.timeFormatted}]</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">{todayQuote.topic}</span>
+              </div>
+              <p className="text-xs sm:text-sm text-zinc-200 font-medium leading-relaxed mt-1">
                 «{todayQuote.quote}»
               </p>
-              <span className="text-[11px] text-zinc-500 font-bold mt-0.5">— {todayQuote.author}</span>
+              <span className="text-[11px] text-zinc-500 font-bold mt-0.5">
+                — {todayQuote.author} <span className="font-normal text-zinc-600">({todayQuote.titleHint})</span>
+              </span>
             </div>
           </div>
 
           <button
-            onClick={() => setSearchQuery(todayQuote.searchTitle)}
-            className="flex-shrink-0 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-white transition-colors border border-zinc-700"
+            onClick={() => playQuoteDirectly(todayQuote)}
+            className="flex-shrink-0 flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-black text-xs transition-all shadow-md active:scale-95 w-full md:w-auto"
           >
-            تصفح الحلقات المتعلقة
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>استمع لهذا المقطع الآن</span>
           </button>
         </div>
       </section>
