@@ -33,16 +33,31 @@ export default function Player() {
   const sleepTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleClose = () => {
+    if (playerRef.current) {
+      try { playerRef.current.pauseVideo(); } catch (e) {}
+    }
     usePlayerStore.setState({ currentEpisode: null, isPlaying: false });
   };
 
+  // إيقاف المشغل السفلي فوراً والانتقال لصفحة الحلقة بدون أي تضارب صوتي
   const handleOpenEpisodePage = () => {
     if (!currentEpisode) return;
-    const targetSlug = currentEpisode.slug || currentEpisode.id;
+    const targetSlug = currentEpisode.slug || currentEpisode.youtube_video_id || currentEpisode.id;
+    const seekTime = Math.floor(currentTime);
+
+    // 1. حفظ التوقيت
     try {
-      localStorage.setItem('eh_el_moshkla_seek_target', currentTime.toString());
+      localStorage.setItem('eh_el_moshkla_seek_target', seekTime.toString());
     } catch (e) {}
-    router.push(`/episodes/${targetSlug}`);
+
+    // 2. إيقاف وإغلاق المشغل المصغر لمنع تضارب الصوت نهائياً
+    if (playerRef.current) {
+      try { playerRef.current.pauseVideo(); } catch (e) {}
+    }
+    usePlayerStore.setState({ currentEpisode: null, isPlaying: false });
+
+    // 3. التوجيه لصفحة الحلقة بنفس التوقيت
+    router.push(`/episodes/${targetSlug}?t=${seekTime}`);
   };
 
   const copyCurrentMomentLink = () => {
@@ -299,7 +314,6 @@ export default function Player() {
       {mode === 'audio' && <div id="youtube-player" className="hidden" />}
 
       <div className="flex flex-col gap-2.5 p-2 sm:p-3 relative">
-        {/* قائمة مؤقت النوم */}
         {showSleepMenu && (
           <div className="absolute bottom-full mb-3 left-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-2 shadow-2xl flex flex-col gap-1 z-50 min-w-[140px] text-right">
             <span className="text-[10px] text-zinc-500 font-bold px-2 py-1">مؤقت النوم</span>
@@ -343,7 +357,6 @@ export default function Player() {
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* زر مشاركة اللحظة بالدقيقة الحالية من المشغل */}
             <button
               onClick={copyCurrentMomentLink}
               title="مشاركة رابط اللحظة الحالية"
@@ -378,7 +391,6 @@ export default function Player() {
           </div>
         </div>
 
-        {/* شريط التقدم LTR */}
         <div dir="ltr" className="flex items-center gap-2.5 text-[11px] text-zinc-400 font-mono select-none">
           <span className="w-10 text-right">{formatTime(currentTime)}</span>
           <input
@@ -392,7 +404,6 @@ export default function Player() {
           <span className="w-10 text-left">{formatTime(duration)}</span>
         </div>
 
-        {/* أزرار التشغيل ومؤقت النوم */}
         <div dir="ltr" className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-2">
             <button onClick={toggleMute} className="text-zinc-400 hover:text-white p-1">

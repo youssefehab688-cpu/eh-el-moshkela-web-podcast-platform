@@ -1,40 +1,62 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Player from '@/components/Player';
+import { supabase } from '@/lib/supabase';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { DAILY_QUOTES, QuoteItem } from '@/data/quotes';
 import { Episode } from '@/types';
 import { toPng } from 'html-to-image';
-import { Quote, Play, Share2, Download, Sparkles, Filter } from 'lucide-react';
+import { Play, Share2, Download, Sparkles, Filter } from 'lucide-react';
 
 const AUTHORS = ['الكل', 'د. محمد الغليظ', 'د. أمير منير', 'م. ياسر ممدوح'];
 
 export default function QuotesPage() {
+  const router = useRouter();
+  const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [selectedAuthor, setSelectedAuthor] = useState('الكل');
   const [activeCardQuote, setActiveCardQuote] = useState<QuoteItem | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const { playEpisode } = usePlayerStore();
+  useEffect(() => {
+    async function loadEpisodes() {
+      const { data } = await supabase.from('episodes').select('*');
+      if (data) setEpisodes(data);
+    }
+    loadEpisodes();
+  }, []);
 
   const filteredQuotes = selectedAuthor === 'الكل'
     ? DAILY_QUOTES
     : DAILY_QUOTES.filter((q) => q.author === selectedAuthor);
 
   const handlePlayQuote = (quoteItem: QuoteItem) => {
-    const epToPlay: Episode = {
-      id: quoteItem.youtubeId,
-      title: quoteItem.titleHint,
-      youtube_video_id: quoteItem.youtubeId,
-      season: 1,
-      episode_number: 1,
-      program: 'eh-el-moshkla',
-      initialSeekTime: quoteItem.seekSeconds,
-    } as any;
+    const matched = episodes.find((e) => {
+      const isSameProg = e.program === quoteItem.program;
+      const isSameSeason = Number(e.season) === Number(quoteItem.season);
+      const isSameEpNum = Number(e.episode_number) === Number(quoteItem.episodeNumber);
+      return (isSameProg && isSameSeason && isSameEpNum) || (quoteItem.youtubeId && e.youtube_video_id === quoteItem.youtubeId);
+    });
 
-    playEpisode(epToPlay, 'video');
+    // إيقاف المشغل المصغر
+    usePlayerStore.setState({ currentEpisode: null, isPlaying: false });
+
+    if (matched) {
+      router.push(`/episodes/${matched.slug || matched.id}?t=${quoteItem.seekSeconds}`);
+    } else {
+      usePlayerStore.getState().playEpisode({
+        id: quoteItem.id,
+        title: quoteItem.titleHint,
+        youtube_video_id: quoteItem.youtubeId || 'Kionl7cyGfM',
+        season: quoteItem.season,
+        episode_number: quoteItem.episodeNumber,
+        program: quoteItem.program,
+        initialSeekTime: quoteItem.seekSeconds,
+      } as any, 'video');
+    }
   };
 
   const downloadCard = async () => {
@@ -58,7 +80,6 @@ export default function QuotesPage() {
     <main className="min-h-screen bg-[#07080b] text-zinc-100 flex flex-col pb-36 selection:bg-amber-400 selection:text-zinc-950">
       <Navbar />
 
-      {/* مودال توليد كارت الاقتباس للمشاركة */}
       {activeCardQuote && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="flex flex-col items-center gap-4 max-w-sm w-full">
@@ -115,7 +136,6 @@ export default function QuotesPage() {
           </p>
         </div>
 
-        {/* فلاتر المتحدث */}
         <div className="flex items-center gap-2 py-6 overflow-x-auto">
           <Filter className="w-4 h-4 text-zinc-500 ml-1 flex-shrink-0" />
           {AUTHORS.map((author) => (
@@ -133,7 +153,6 @@ export default function QuotesPage() {
           ))}
         </div>
 
-        {/* شبكة الاقتباسات */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {filteredQuotes.map((q) => (
             <div

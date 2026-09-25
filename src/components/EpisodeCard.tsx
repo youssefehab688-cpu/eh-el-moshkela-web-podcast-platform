@@ -1,13 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Episode } from '@/types';
 import { usePlayerStore } from '@/store/usePlayerStore';
-import { Play, Headphones, Clock, Check } from 'lucide-react';
+import { Play, Headphones, Clock, Sparkles } from 'lucide-react';
 
 interface EpisodeCardProps {
   episode: Episode;
+}
+
+// دالة تنظيف واستخراج معرّف يوتيوب النقي من أي صيغة رابط
+function getCleanVideoId(rawId?: string): string {
+  if (!rawId) return '';
+  const trimmed = rawId.trim();
+  const match = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+  if (match && match[1]) return match[1];
+  // تنظيف أي بارامترات إضافية مثل ?si=
+  return trimmed.split('?')[0].split('&')[0];
 }
 
 function formatDuration(seconds?: number): string {
@@ -22,30 +32,40 @@ function formatDuration(seconds?: number): string {
 }
 
 export default function EpisodeCard({ episode }: EpisodeCardProps) {
-  const { playEpisode, currentEpisode, isPlaying } = usePlayerStore();
-  const [imgSrc, setImgSrc] = useState(
-    `https://img.youtube.com/vi/${episode.youtube_video_id}/maxresdefault.jpg`
-  );
+  const { playEpisode } = usePlayerStore();
+  
+  // استخراج المعرف النقي
+  const cleanId = useMemo(() => getCleanVideoId(episode.youtube_video_id), [episode.youtube_video_id]);
 
-  const isCurrent = currentEpisode?.id === episode.id;
+  // تسلسل المحاولات: 0 = hqdefault (الأكثر ضماناً) -> 1 = mqdefault -> 2 = hero-banner احتياطي
+  const [attempt, setAttempt] = useState<number>(0);
+
+  // إعادة ضبط الحالة عند تغير الحلقة أو الفلترة
+  useEffect(() => {
+    setAttempt(0);
+  }, [cleanId]);
+
+  const thumbnailSrc = useMemo(() => {
+    if (!cleanId) return '/hero-banner.jpg';
+    if (attempt === 0) return `https://img.youtube.com/vi/${cleanId}/hqdefault.jpg`;
+    if (attempt === 1) return `https://img.youtube.com/vi/${cleanId}/mqdefault.jpg`;
+    return '/hero-banner.jpg';
+  }, [cleanId, attempt]);
 
   const handleImageError = () => {
-    // التراجع التدريجي للجودة المتوفرة لضمان ظهور الصورة دائماً
-    if (imgSrc.includes('maxresdefault')) {
-      setImgSrc(`https://img.youtube.com/vi/${episode.youtube_video_id}/hqdefault.jpg`);
-    } else if (imgSrc.includes('hqdefault')) {
-      setImgSrc(`https://img.youtube.com/vi/${episode.youtube_video_id}/mqdefault.jpg`);
-    }
+    setAttempt((prev) => prev + 1);
   };
 
   return (
     <div className="group flex flex-col justify-between bg-zinc-900/40 hover:bg-zinc-800/60 border border-zinc-800/80 hover:border-amber-400/40 rounded-3xl p-3 sm:p-3.5 transition-all duration-300 shadow-lg hover:shadow-2xl hover:-translate-y-1">
+      
       {/* الصورة المصغرة مع التوقيت وشارة الموسم */}
       <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-zinc-950 border border-white/5 flex-shrink-0">
         <img
-          src={imgSrc}
+          src={thumbnailSrc}
           alt={episode.title}
           onError={handleImageError}
+          loading="lazy"
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
 
@@ -61,7 +81,7 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
 
         {/* شارة الموسم والحلقة */}
         <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-zinc-950/80 backdrop-blur-md text-[10px] font-bold text-zinc-300 border border-white/10">
-          الموسم {episode.season} • حـ{episode.episode_number}
+          {episode.program === 'ala-el-maghreb' ? 'عالـمغرب' : 'الموسم'} {episode.season} • حـ{episode.episode_number}
         </div>
       </div>
 
@@ -99,6 +119,7 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
           <span>فيديو</span>
         </button>
       </div>
+
     </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Episode } from '@/types';
 import Navbar from '@/components/Navbar';
@@ -47,6 +48,7 @@ function formatMinutes(seconds: number) {
 }
 
 export default function HomePage() {
+  const router = useRouter();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -105,7 +107,6 @@ export default function HomePage() {
     fetchEpisodes();
   }, [setPlaylist]);
 
-  // تحديد اقتباس اليوم: ذكي بناءً على آخر موضوع تم الاستماع إليه أو يوم الشهر
   const todayQuote: QuoteItem = useMemo(() => {
     if (lastPlayed?.episode?.topic) {
       const matched = DAILY_QUOTES.find((q) => q.topic === lastPlayed.episode.topic);
@@ -165,23 +166,33 @@ export default function HomePage() {
     }
   };
 
-  // تشغيل الاقتباس فوراً عند الثانية المحددة
+  // فتح صفحة الحلقة الدقيقة مباشرة بالثانية المحددة
   const playQuoteDirectly = (quoteItem: QuoteItem) => {
-    const matched = episodes.find((e) => e.youtube_video_id === quoteItem.youtubeId) || {
-      id: quoteItem.youtubeId,
-      title: quoteItem.titleHint,
-      youtube_video_id: quoteItem.youtubeId,
-      season: 1,
-      episode_number: 1,
-      program: 'eh-el-moshkla',
-    };
+    // 1. مطابقة دقيقة للحلقة من قاعدة البيانات
+    const matched = episodes.find((e) => {
+      const isSameProg = e.program === quoteItem.program;
+      const isSameSeason = Number(e.season) === Number(quoteItem.season);
+      const isSameEpNum = Number(e.episode_number) === Number(quoteItem.episodeNumber);
+      return (isSameProg && isSameSeason && isSameEpNum) || (quoteItem.youtubeId && e.youtube_video_id === quoteItem.youtubeId);
+    });
 
-    const epToPlay = {
-      ...matched,
-      initialSeekTime: quoteItem.seekSeconds,
-    };
+    // 2. إيقاف أي مشغل سفلي
+    usePlayerStore.setState({ currentEpisode: null, isPlaying: false });
 
-    playEpisode(epToPlay as Episode, 'video');
+    if (matched) {
+      router.push(`/episodes/${matched.slug || matched.id}?t=${quoteItem.seekSeconds}`);
+    } else {
+      // تشغيل احتياطي مباشر في المشغل
+      playEpisode({
+        id: quoteItem.id,
+        title: quoteItem.titleHint,
+        youtube_video_id: quoteItem.youtubeId || 'Kionl7cyGfM',
+        season: quoteItem.season,
+        episode_number: quoteItem.episodeNumber,
+        program: quoteItem.program,
+        initialSeekTime: quoteItem.seekSeconds,
+      } as any, 'video');
+    }
   };
 
   const isFiltered = searchQuery !== '' || selectedProgram !== 'all' || selectedSeason !== 'all' || selectedTopic !== 'الكل';
@@ -191,7 +202,6 @@ export default function HomePage() {
     <main className="min-h-screen bg-[#07080b] text-zinc-100 flex flex-col pb-36 selection:bg-amber-400 selection:text-zinc-950">
       <Navbar />
 
-      {/* الهيرو السينمائي */}
       <section className="relative w-full min-h-[75vh] sm:min-h-[82vh] flex items-center justify-start overflow-hidden border-b border-zinc-800/80 pt-24 pb-14 px-5 sm:px-12 lg:px-20">
         <div className="absolute inset-0 z-0">
           <img
@@ -273,7 +283,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* استئناف الاستماع */}
       {lastPlayed && (
         <section className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 -mt-6 sm:-mt-8 relative z-20">
           <div className="rounded-3xl border border-amber-500/30 bg-zinc-900/90 backdrop-blur-2xl p-4 sm:p-5 shadow-2xl shadow-amber-950/20 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -327,7 +336,7 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* قسم فائدة اليوم الموثق بالثانية الدقيقة */}
+      {/* قسم فائدة اليوم مع الانتقال الدقيق والمباشر */}
       <section className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 pt-6">
         <div className="rounded-3xl bg-gradient-to-r from-zinc-900/60 via-zinc-900/80 to-zinc-900/60 border border-zinc-800/80 p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4 backdrop-blur-md shadow-xl">
           <div className="flex items-start sm:items-center gap-3 w-full md:w-auto">
