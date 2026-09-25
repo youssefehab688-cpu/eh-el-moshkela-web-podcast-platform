@@ -39,24 +39,20 @@ export default function Player() {
     usePlayerStore.setState({ currentEpisode: null, isPlaying: false });
   };
 
-  // إيقاف المشغل السفلي فوراً والانتقال لصفحة الحلقة بدون أي تضارب صوتي
   const handleOpenEpisodePage = () => {
     if (!currentEpisode) return;
     const targetSlug = currentEpisode.slug || currentEpisode.youtube_video_id || currentEpisode.id;
     const seekTime = Math.floor(currentTime);
 
-    // 1. حفظ التوقيت
     try {
       localStorage.setItem('eh_el_moshkla_seek_target', seekTime.toString());
     } catch (e) {}
 
-    // 2. إيقاف وإغلاق المشغل المصغر لمنع تضارب الصوت نهائياً
     if (playerRef.current) {
       try { playerRef.current.pauseVideo(); } catch (e) {}
     }
     usePlayerStore.setState({ currentEpisode: null, isPlaying: false });
 
-    // 3. التوجيه لصفحة الحلقة بنفس التوقيت
     router.push(`/episodes/${targetSlug}?t=${seekTime}`);
   };
 
@@ -232,21 +228,21 @@ export default function Player() {
     }
   };
 
-  const togglePlay = () => {
+  const togglePlay = useCallback(() => {
     if (!playerRef.current) return;
     if (isPlaying) {
       playerRef.current.pauseVideo();
     } else {
       playerRef.current.playVideo();
     }
-  };
+  }, [isPlaying]);
 
-  const seekRelative = (seconds: number) => {
+  const seekRelative = useCallback((seconds: number) => {
     if (!playerRef.current) return;
     const newTime = Math.max(0, Math.min(currentTime + seconds, duration));
     playerRef.current.seekTo(newTime, true);
     setCurrentTime(newTime);
-  };
+  }, [currentTime, duration]);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTime = parseFloat(e.target.value);
@@ -256,7 +252,7 @@ export default function Player() {
     }
   };
 
-  const toggleMute = () => {
+  const toggleMute = useCallback(() => {
     if (!playerRef.current) return;
     if (isMuted) {
       playerRef.current.unMute();
@@ -265,7 +261,7 @@ export default function Player() {
       playerRef.current.mute();
       setIsMuted(true);
     }
-  };
+  }, [isMuted]);
 
   const changeSpeed = () => {
     const rates = [1, 1.25, 1.5, 1.75, 2];
@@ -291,6 +287,37 @@ export default function Player() {
       playEpisode(playlist[currentIndex - 1], mode);
     }
   }, [currentEpisode, playlist, mode, playEpisode]);
+
+  // استماع لاختصارات لوحة المفاتيح
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      if (e.code === 'Space' || e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        seekRelative(10);
+      } else if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        seekRelative(-10);
+      } else if (e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        toggleMute();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [togglePlay, seekRelative, toggleMute]);
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);

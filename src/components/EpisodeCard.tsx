@@ -4,19 +4,17 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Episode } from '@/types';
 import { usePlayerStore } from '@/store/usePlayerStore';
-import { Play, Headphones, Clock, Sparkles } from 'lucide-react';
+import { Play, Headphones, Clock, Check, Bookmark } from 'lucide-react';
 
 interface EpisodeCardProps {
   episode: Episode;
 }
 
-// دالة تنظيف واستخراج معرّف يوتيوب النقي من أي صيغة رابط
 function getCleanVideoId(rawId?: string): string {
   if (!rawId) return '';
   const trimmed = rawId.trim();
   const match = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
   if (match && match[1]) return match[1];
-  // تنظيف أي بارامترات إضافية مثل ?si=
   return trimmed.split('?')[0].split('&')[0];
 }
 
@@ -33,17 +31,47 @@ function formatDuration(seconds?: number): string {
 
 export default function EpisodeCard({ episode }: EpisodeCardProps) {
   const { playEpisode } = usePlayerStore();
-  
-  // استخراج المعرف النقي
   const cleanId = useMemo(() => getCleanVideoId(episode.youtube_video_id), [episode.youtube_video_id]);
 
-  // تسلسل المحاولات: 0 = hqdefault (الأكثر ضماناً) -> 1 = mqdefault -> 2 = hero-banner احتياطي
   const [attempt, setAttempt] = useState<number>(0);
+  const [isWatched, setIsWatched] = useState(false);
+  const [progressPercent, setProgressPercent] = useState<number>(0);
 
-  // إعادة ضبط الحالة عند تغير الحلقة أو الفلترة
   useEffect(() => {
     setAttempt(0);
-  }, [cleanId]);
+    try {
+      // قراءة حالة تم الاستماع
+      const watchedList = JSON.parse(localStorage.getItem('eh_el_moshkla_watched') || '[]');
+      setIsWatched(watchedList.includes(episode.id));
+
+      // قراءة نسبة التقدم إن وجدت
+      const last = localStorage.getItem('eh_el_moshkla_last_played');
+      if (last) {
+        const parsed = JSON.parse(last);
+        if (parsed?.episode?.id === episode.id && parsed?.duration > 0) {
+          const pct = Math.min(100, Math.round((parsed.currentTime / parsed.duration) * 100));
+          setProgressPercent(pct);
+        }
+      }
+    } catch (e) {}
+  }, [cleanId, episode.id]);
+
+  const toggleWatched = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const watchedList: string[] = JSON.parse(localStorage.getItem('eh_el_moshkla_watched') || '[]');
+      let updated: string[];
+      if (isWatched) {
+        updated = watchedList.filter((id) => id !== episode.id);
+        setIsWatched(false);
+      } else {
+        updated = [...watchedList, episode.id];
+        setIsWatched(true);
+      }
+      localStorage.setItem('eh_el_moshkla_watched', JSON.stringify(updated));
+    } catch (err) {}
+  };
 
   const thumbnailSrc = useMemo(() => {
     if (!cleanId) return '/hero-banner.jpg';
@@ -52,26 +80,37 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
     return '/hero-banner.jpg';
   }, [cleanId, attempt]);
 
-  const handleImageError = () => {
-    setAttempt((prev) => prev + 1);
-  };
-
   return (
     <div className="group flex flex-col justify-between bg-zinc-900/40 hover:bg-zinc-800/60 border border-zinc-800/80 hover:border-amber-400/40 rounded-3xl p-3 sm:p-3.5 transition-all duration-300 shadow-lg hover:shadow-2xl hover:-translate-y-1">
       
-      {/* الصورة المصغرة مع التوقيت وشارة الموسم */}
+      {/* الغلاف وأزرار التحديد والمدة */}
       <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-zinc-950 border border-white/5 flex-shrink-0">
         <img
           src={thumbnailSrc}
           alt={episode.title}
-          onError={handleImageError}
+          onError={() => setAttempt((p) => p + 1)}
           loading="lazy"
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
 
-        {/* مدة الحلقة */}
+        {/* زر تم الاستماع (الأعلى يميناً) */}
+        <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
+          <button
+            onClick={toggleWatched}
+            title={isWatched ? 'إلغاء التحديد' : 'تحديد كـ تم الاستماع'}
+            className={`p-1.5 rounded-full transition-all duration-200 backdrop-blur-md ${
+              isWatched
+                ? 'bg-emerald-500 text-zinc-950 shadow-lg shadow-emerald-500/20'
+                : 'bg-black/60 text-zinc-400 hover:text-white hover:bg-black/80'
+            }`}
+          >
+            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+          </button>
+        </div>
+
+        {/* مدة الحلقة وشارة الموسم */}
         {episode.duration_seconds && (
           <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-[10px] font-mono text-zinc-300 flex items-center gap-1 border border-white/10">
             <Clock className="w-3 h-3 text-amber-400" />
@@ -79,10 +118,19 @@ export default function EpisodeCard({ episode }: EpisodeCardProps) {
           </div>
         )}
 
-        {/* شارة الموسم والحلقة */}
         <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-zinc-950/80 backdrop-blur-md text-[10px] font-bold text-zinc-300 border border-white/10">
           {episode.program === 'ala-el-maghreb' ? 'عالـمغرب' : 'الموسم'} {episode.season} • حـ{episode.episode_number}
         </div>
+
+        {/* شريط الإنجاز الذهبي التلقائي */}
+        {progressPercent > 0 && !isWatched && (
+          <div className="absolute bottom-0 inset-x-0 h-1 bg-zinc-800/80">
+            <div
+              className="h-full bg-amber-400 transition-all duration-300"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        )}
       </div>
 
       {/* تفاصيل الحلقة */}
