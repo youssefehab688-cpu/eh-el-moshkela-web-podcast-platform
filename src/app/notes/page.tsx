@@ -2,148 +2,176 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useAuthStore } from '@/store/useAuthStore';
-import { usePlayerStore } from '@/store/usePlayerStore';
 import { supabase } from '@/lib/supabase';
-import { Note, Episode } from '@/types';
+import { useAuthStore } from '@/store/useAuthStore';
 import Navbar from '@/components/Navbar';
 import Player from '@/components/Player';
-import { formatTime } from '@/lib/utils';
-import { BookOpen, Trash2, Play, ArrowRight, User } from 'lucide-react';
+import { BookOpen, Download, Trash2, ArrowLeft, Clock } from 'lucide-react';
+
+interface NoteWithEpisode {
+  id: string;
+  timestamp_seconds: number;
+  content: string;
+  created_at: string;
+  episode_id: string;
+  episodes: {
+    title: string;
+    slug: string;
+    season: number;
+    episode_number: number;
+    program: string;
+  };
+}
+
+function formatSeconds(secs: number) {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
 
 export default function NotesPage() {
-  const { user } = useAuthStore();
-  const { playEpisode } = usePlayerStore();
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [episodesMap, setEpisodesMap] = useState<Record<string, Episode>>({});
+  const { user, openAuthModal } = useAuthStore();
+  const [notes, setNotes] = useState<NoteWithEpisode[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadData() {
-      if (!user?.id) {
+    async function fetchAllNotes() {
+      if (!user) {
         setLoading(false);
         return;
       }
 
-      const { data: notesData } = await supabase
-        .from('user_notes')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      try {
+        const { data, error } = await supabase
+          .from('notes')
+          .select('*, episodes (title, slug, season, episode_number, program)')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
 
-      if (notesData) setNotes(notesData);
-
-      const { data: epData } = await supabase.from('episodes').select('*');
-      if (epData) {
-        const map: Record<string, Episode> = {};
-        epData.forEach((ep: Episode) => {
-          map[ep.id] = ep;
-        });
-        setEpisodesMap(map);
+        if (!error && data) {
+          setNotes(data as any);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     }
 
-    loadData();
-  }, [user?.id]);
+    fetchAllNotes();
+  }, [user]);
 
-  const handleDeleteNote = async (noteId: string) => {
+  const handleDelete = async (noteId: string) => {
+    await supabase.from('notes').delete().eq('id', noteId);
     setNotes((prev) => prev.filter((n) => n.id !== noteId));
-    await supabase.from('user_notes').delete().eq('id', noteId);
+  };
+
+  const exportAllNotes = () => {
+    if (notes.length === 0) return;
+    const header = `سجل الفوائد والملاحظات الكامل | منصة بودكاست إيه المشكلة؟ وعالـمغرب\nتم التصدير بتاريخ: ${new Date().toLocaleDateString('ar-EG')}\n======================================================\n\n`;
+    
+    const body = notes.map((n, i) => {
+      const ep = n.episodes;
+      return `${i + 1}. [${ep?.title || 'حلقة'}] (الموسم ${ep?.season || 1}) - دقيقة [${formatSeconds(n.timestamp_seconds)}]\nالفائدة: ${n.content}\n------------------------------------------------------`;
+    }).join('\n\n');
+
+    const blob = new Blob([header + body], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `سجل-فوائد-إيه-المشكلة-${Date.now()}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col pb-36">
+    <main className="min-h-screen bg-[#07080b] text-zinc-100 flex flex-col pb-36 selection:bg-amber-400 selection:text-zinc-950">
       <Navbar />
 
-      <div className="container mx-auto max-w-5xl px-4 sm:px-6 pt-8 flex flex-col gap-6">
-        <div className="flex items-center justify-between border-b border-zinc-800/80 pb-6">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-sky-400/10 border border-sky-400/20 flex items-center justify-center text-sky-400">
-              <BookOpen className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-black text-white">دفتر الملاحظات والفوائد</h1>
-              <p className="text-xs text-zinc-400">جميع الخواطر والفوائد التي دونتها متزامنة مع وقت الحلقات</p>
-            </div>
+      <section className="mx-auto w-full max-w-5xl px-4 sm:px-8 pt-24">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-zinc-800">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2">
+              <BookOpen className="w-6 h-6 text-amber-400" />
+              <span>دفتر الملاحظات والفوائد</span>
+            </h1>
+            <p className="text-xs text-zinc-400 mt-1">
+              جميع الفوائد والخواطر التي دوّنتها أثناء الاستماع للحلقات مرتبة ومحفوظة بحسابك.
+            </p>
           </div>
 
-          <Link href="/" className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white font-bold transition-colors">
-            <span>الرئيسية</span>
-            <ArrowRight className="w-3.5 h-3.5 rotate-180" />
-          </Link>
+          {user && notes.length > 0 && (
+            <button
+              onClick={exportAllNotes}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-black transition-all shadow-lg active:scale-95"
+            >
+              <Download className="w-4 h-4" />
+              <span>تصدير كل الملاحظات (Backup)</span>
+            </button>
+          )}
         </div>
 
         {!user ? (
-          <div className="py-20 flex flex-col items-center justify-center text-center gap-3 bg-zinc-900/30 border border-dashed border-zinc-800 rounded-3xl p-6">
-            <User className="w-10 h-10 text-zinc-600" />
-            <h3 className="text-base font-bold text-white">يرجى تسجيل الدخول</h3>
-            <p className="text-xs text-zinc-400 max-w-sm">
-              سجل دخولك بحسابك لتتمكن من حفظ الملاحظات واسترجاعها من أي جهاز في أي وقت.
-            </p>
+          <div className="py-20 flex flex-col items-center justify-center text-center gap-3">
+            <p className="text-xs text-zinc-400">سجّل الدخول بحساب Google لحفظ وتصفح فوائدك وملاحظاتك في أي وقت.</p>
+            <button
+              onClick={openAuthModal}
+              className="px-6 py-2.5 rounded-full bg-white text-zinc-950 font-black text-xs hover:bg-zinc-200 transition-all shadow"
+            >
+              تسجيل الدخول
+            </button>
           </div>
         ) : loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-300"></div>
+          <div className="py-20 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-400" />
           </div>
-        ) : notes.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {notes.map((note) => {
-              const ep = episodesMap[note.episode_id];
-              return (
-                <div
-                  key={note.id}
-                  className="p-5 rounded-2xl bg-zinc-900/60 border border-zinc-800 hover:border-zinc-700 flex flex-col justify-between gap-4 transition-all"
-                >
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold text-slate-300 truncate max-w-[200px]">
-                        {note.episode_title || ep?.title || 'حلقة غير محددة'}
-                      </span>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-lg bg-zinc-800 text-zinc-400 border border-zinc-700/60">
-                        {formatTime(note.time_seconds || 0)}
-                      </span>
-                    </div>
-
-                    <p className="text-xs sm:text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap bg-zinc-950/60 p-3 rounded-xl border border-zinc-800/60">
-                      {note.text}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-zinc-800/60 text-xs">
-                    {ep ? (
-                      <button
-                        onClick={() => playEpisode(ep, 'video')}
-                        className="flex items-center gap-1.5 text-xs text-white hover:text-slate-300 font-bold"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>تشغيل الحلقة عند التوقيت</span>
-                      </button>
-                    ) : <span />}
-
-                    <button
-                      onClick={() => handleDeleteNote(note.id)}
-                      className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                      title="حذف الملاحظة"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+        ) : notes.length === 0 ? (
+          <div className="py-20 text-center text-zinc-500 text-xs">
+            لم تقم بتدوين أي ملاحظة بعد. افتح أي حلقة واستخدم زر «تدوين الملاحظات» أثناء الاستماع.
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-20 px-4 text-center bg-zinc-900/30 border border-dashed border-zinc-800 rounded-3xl gap-3">
-            <BookOpen className="w-10 h-10 text-zinc-600" />
-            <h3 className="text-base font-bold text-white">لا توجد ملاحظات مسجلة بعد</h3>
-            <p className="text-xs text-zinc-400 max-w-md">
-              أثناء استماعك لأي حلقة، يمكنك تدوين أي فائدة أو خاطرة لتُحفظ متزامنة مع الدقيقة التي استمعت إليها.
-            </p>
+          <div className="flex flex-col gap-3 pt-6">
+            {notes.map((note) => (
+              <div
+                key={note.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-zinc-900/40 border border-zinc-800/80 hover:border-zinc-700 transition-all text-right"
+              >
+                <div className="flex flex-col gap-1.5 min-w-0">
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="font-bold text-amber-400">{note.episodes?.title}</span>
+                    <span className="text-zinc-600">•</span>
+                    <span className="text-zinc-400 font-mono flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      [{formatSeconds(note.timestamp_seconds)}]
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-200 leading-relaxed font-normal">
+                    {note.content}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-center flex-shrink-0">
+                  <Link
+                    href={`/episodes/${note.episodes?.slug || note.episode_id}`}
+                    className="p-2 rounded-xl bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors text-xs font-bold flex items-center gap-1"
+                  >
+                    <span>فتح الحلقة</span>
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                  </Link>
+
+                  <button
+                    onClick={() => handleDelete(note.id)}
+                    className="p-2 rounded-xl hover:bg-red-950/40 text-zinc-500 hover:text-red-400 transition-colors"
+                    title="حذف الملاحظة"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
-      </div>
+      </section>
 
       <Player />
     </main>
