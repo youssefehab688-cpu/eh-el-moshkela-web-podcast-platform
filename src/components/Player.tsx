@@ -4,15 +4,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { 
   Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, 
-  Maximize2, Minimize2, SkipBack, SkipForward, X, Radio, Sparkles
+  SkipBack, SkipForward, X
 } from 'lucide-react';
-
-declare global {
-  interface Window {
-    YT: any;
-    onYouTubeIframeAPIReady: () => void;
-  }
-}
 
 export default function Player() {
   const {
@@ -23,35 +16,41 @@ export default function Player() {
     setIsPlaying,
     setMode,
     playEpisode,
-    closePlayer,
   } = usePlayerStore();
 
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [isPlayerReady, setIsPlayerReady] = useState(false);
 
   const playerRef = useRef<any>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const timeUpdateInterval = useRef<NodeJS.Timeout | null>(null);
 
-  // حفظ التوقيت الحالي والحلقة لاستئناف الاستماع لاحقاً
+  // إغلاق المشغل
+  const handleClose = () => {
+    usePlayerStore.setState({ currentEpisode: null, isPlaying: false });
+  };
+
+  // حفظ التوقيت الحالي لاستئناف الاستماع
   useEffect(() => {
     if (currentEpisode && currentTime > 5) {
-      localStorage.setItem(
-        'eh_el_moshkla_last_played',
-        JSON.stringify({
-          episode: currentEpisode,
-          currentTime,
-          duration: duration || currentEpisode.duration_seconds || 0,
-          savedAt: Date.now()
-        })
-      );
+      try {
+        localStorage.setItem(
+          'eh_el_moshkla_last_played',
+          JSON.stringify({
+            episode: currentEpisode,
+            currentTime,
+            duration: duration || currentEpisode.duration_seconds || 0,
+            savedAt: Date.now()
+          })
+        );
+      } catch (e) {
+        console.error(e);
+      }
     }
   }, [currentEpisode, currentTime, duration]);
 
-  // إعداد التحكم من شاشة القفل عبر Media Session API
+  // إعداد Media Session للتحكم من شاشة القفل
   useEffect(() => {
     if (!currentEpisode || typeof window === 'undefined' || !('mediaSession' in navigator)) return;
 
@@ -87,81 +86,79 @@ export default function Player() {
       const newTime = (playerRef.current?.getCurrentTime() || 0) + 15;
       playerRef.current?.seekTo(newTime, true);
     });
+  }, [currentEpisode, setIsPlaying]);
 
-    navigator.mediaSession.setActionHandler('previoustrack', () => handlePrev());
-    navigator.mediaSession.setActionHandler('nexttrack', () => handleNext());
-  }, [currentEpisode]);
-
-  // تحميل YouTube IFrame API
+  // تحميل مكتبة YouTube IFrame API
   useEffect(() => {
-    if (!window.YT) {
+    if (typeof window !== 'undefined' && !(window as any).YT) {
       const tag = document.createElement('script');
       tag.src = 'https://www.youtube.com/iframe_api';
       const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+      firstScriptTag?.parentNode?.insertBefore(tag, firstScriptTag);
     }
   }, []);
 
-  // تجهيز المشغل
+  // تشغيل وتهيئة الفيديو
   useEffect(() => {
-    if (!currentEpisode) return;
+    if (!currentEpisode || typeof window === 'undefined') return;
 
     const initPlayer = () => {
       if (playerRef.current) {
-        playerRef.current.destroy();
+        try { playerRef.current.destroy(); } catch (e) {}
       }
 
-      const initialTime = currentEpisode.initialSeekTime || 0;
+      const initialTime = (currentEpisode as any).initialSeekTime || 0;
 
-      playerRef.current = new window.YT.Player('youtube-player', {
-        videoId: currentEpisode.youtube_video_id,
-        playerVars: {
-          autoplay: 1,
-          controls: 0,
-          disablekb: 1,
-          enablejsapi: 1,
-          fs: 0,
-          modestbranding: 1,
-          rel: 0,
-          start: Math.floor(initialTime),
-        },
-        events: {
-          onReady: (event: any) => {
-            setIsPlayerReady(true);
-            setDuration(event.target.getDuration());
-            if (initialTime > 0) {
-              event.target.seekTo(initialTime, true);
-            }
-            event.target.playVideo();
-            setIsPlaying(true);
+      if ((window as any).YT && (window as any).YT.Player) {
+        playerRef.current = new (window as any).YT.Player('youtube-player', {
+          videoId: currentEpisode.youtube_video_id,
+          playerVars: {
+            autoplay: 1,
+            controls: 0,
+            disablekb: 1,
+            enablejsapi: 1,
+            fs: 0,
+            modestbranding: 1,
+            rel: 0,
+            start: Math.floor(initialTime),
           },
-          onStateChange: (event: any) => {
-            if (event.data === window.YT.PlayerState.PLAYING) {
+          events: {
+            onReady: (event: any) => {
+              setDuration(event.target.getDuration());
+              if (initialTime > 0) {
+                event.target.seekTo(initialTime, true);
+              }
+              event.target.playVideo();
               setIsPlaying(true);
-              startTimeTracking();
-            } else if (event.data === window.YT.PlayerState.PAUSED) {
-              setIsPlaying(false);
-              stopTimeTracking();
-            } else if (event.data === window.YT.PlayerState.ENDED) {
-              setIsPlaying(false);
-              stopTimeTracking();
-              handleNext();
-            }
+            },
+            onStateChange: (event: any) => {
+              if (event.data === 1) { // PLAYING
+                setIsPlaying(true);
+                startTimeTracking();
+              } else if (event.data === 2) { // PAUSED
+                setIsPlaying(false);
+                stopTimeTracking();
+              } else if (event.data === 0) { // ENDED
+                setIsPlaying(false);
+                stopTimeTracking();
+                handleNext();
+              }
+            },
           },
-        },
-      });
+        });
+      }
     };
 
-    if (window.YT && window.YT.Player) {
+    if ((window as any).YT && (window as any).YT.Player) {
       initPlayer();
     } else {
-      window.onYouTubeIframeAPIReady = initPlayer;
+      (window as any).onYouTubeIframeAPIReady = initPlayer;
     }
 
     return () => {
       stopTimeTracking();
       if (playerRef.current) {
-        playerRef.current.destroy();
+        try { playerRef.current.destroy(); } catch (e) {}
       }
     };
   }, [currentEpisode?.youtube_video_id]);
@@ -170,8 +167,7 @@ export default function Player() {
     stopTimeTracking();
     timeUpdateInterval.current = setInterval(() => {
       if (playerRef.current && playerRef.current.getCurrentTime) {
-        const time = playerRef.current.getCurrentTime();
-        setCurrentTime(time);
+        setCurrentTime(playerRef.current.getCurrentTime());
       }
     }, 1000);
   };
@@ -252,22 +248,18 @@ export default function Player() {
 
   return (
     <div
-      ref={containerRef}
       className={`fixed z-50 transition-all duration-300 ${
         mode === 'video'
           ? 'bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:w-[480px] bg-zinc-950/95 border border-zinc-700/80 rounded-3xl shadow-2xl backdrop-blur-2xl overflow-hidden'
           : 'bottom-0 inset-x-0 bg-zinc-950/90 border-t border-zinc-800/80 backdrop-blur-2xl px-4 py-3'
       }`}
     >
-      {/* مشغل يوتيوب غير المرئي في وضع الصوت أو المرئي في وضع الفيديو */}
       <div className={`${mode === 'video' ? 'w-full aspect-video bg-black relative' : 'hidden'}`}>
         <div id="youtube-player" className="w-full h-full" />
       </div>
       {mode === 'audio' && <div id="youtube-player" className="hidden" />}
 
-      {/* لوحة التحكم */}
       <div className="flex flex-col gap-2 p-3 sm:p-4">
-        {/* معلومات الحلقة وأزرار التحكم بالوضع */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 overflow-hidden">
             <img
@@ -293,7 +285,7 @@ export default function Player() {
               {mode === 'audio' ? 'عرض الفيديو' : 'وضع الصوت'}
             </button>
             <button
-              onClick={closePlayer}
+              onClick={handleClose}
               className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800"
             >
               <X className="w-4 h-4" />
@@ -301,7 +293,6 @@ export default function Player() {
           </div>
         </div>
 
-        {/* شريط التقدم الزمني */}
         <div className="flex items-center gap-2 text-[10px] text-zinc-400 font-mono">
           <span>{formatTime(currentTime)}</span>
           <input
@@ -315,7 +306,6 @@ export default function Player() {
           <span>{formatTime(duration)}</span>
         </div>
 
-        {/* أزرار التحكم بالصوت والسرعة والتقديم */}
         <div className="flex items-center justify-between pt-1">
           <button
             onClick={changeSpeed}
