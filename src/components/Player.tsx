@@ -9,6 +9,34 @@ import {
   ChevronDown
 } from 'lucide-react';
 
+// معادلة موجة سامسونج One UI 9 الدقيقة
+function generateOneUiSurfacePath(wavelength = 40, height = 7.5, baseline = 16, totalWidth = 1440) {
+  const periods = Math.ceil(totalWidth / wavelength) + 2;
+  const wHalf = wavelength / 2;
+  let d = `M 0 ${baseline}`;
+  for (let i = 0; i < periods; i++) {
+    const x0 = i * wavelength;
+    const xMid = x0 + wHalf;
+    const xEnd = x0 + wavelength;
+
+    const cp1X = x0 + wavelength * 0.18;
+    const cp1Y = baseline;
+    const cp2X = xMid - wavelength * 0.18;
+    const cp2Y = baseline - height;
+
+    const cp3X = xMid + wavelength * 0.18;
+    const cp3Y = baseline - height;
+    const cp4X = xEnd - wavelength * 0.18;
+    const cp4Y = baseline;
+
+    d += ` C ${cp1X.toFixed(1)} ${cp1Y.toFixed(1)}, ${cp2X.toFixed(1)} ${cp2Y.toFixed(1)}, ${xMid.toFixed(1)} ${(baseline - height).toFixed(1)}`;
+    d += ` C ${cp3X.toFixed(1)} ${cp3Y.toFixed(1)}, ${cp4X.toFixed(1)} ${cp4Y.toFixed(1)}, ${xEnd.toFixed(1)} ${baseline.toFixed(1)}`;
+  }
+  return d;
+}
+
+const ONE_UI_SURFACE_PATH = generateOneUiSurfacePath(40, 7.5, 16, 1440);
+
 export default function Player() {
   const router = useRouter();
   const {
@@ -25,60 +53,33 @@ export default function Player() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [sleepTimer, setSleepTimer] = useState<number | null>(null);
   const [showSleepMenu, setShowSleepMenu] = useState(false);
   const [copiedTimestamp, setCopiedTimestamp] = useState(false);
 
-  // إحداثيات وأبعاد النافذة العائمة المستقلة
-  const [windowBounds, setWindowBounds] = useState<{ x: number; y: number; width: number } | null>(null);
+  // حجم النافذة العائمة
+  const [windowWidth, setWindowWidth] = useState(420);
   const [isResizing, setIsResizing] = useState(false);
   const resizeOriginRef = useRef<{ 
     startX: number; 
     startY: number; 
     startW: number; 
-    startPosX: number; 
-    startPosY: number; 
     corner: 'tl' | 'tr' | 'bl' | 'br' 
   } | null>(null);
 
+  // السحب الحر للنافذة
+  const [position, setPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ startX: number; startY: number; posX: number; posY: number } | null>(null);
 
+  // إدارة مؤقت النوم (Sleep Timer)
+  const [sleepTimerMinutes, setSleepTimerMinutes] = useState<number | null>(null);
+  const [sleepTimerTimeLeft, setSleepTimerTimeLeft] = useState<number | null>(null); // بالثواني
+  const sleepTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [stopAtEndOfVideo, setStopAtEndOfVideo] = useState(false);
+
   const playerRef = useRef<any>(null);
   const timeUpdateInterval = useRef<NodeJS.Timeout | null>(null);
-  const sleepTimerRef = useRef<NodeJS.Timeout | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
-
-  // تعيين الموقع التلقائي في أسفل اليمين
-  useEffect(() => {
-    if (typeof window !== 'undefined' && !windowBounds) {
-      const defaultW = Math.min(420, window.innerWidth - 32);
-      const defaultH = defaultW * (9 / 16) + 105;
-      setWindowBounds({
-        x: Math.max(16, window.innerWidth - defaultW - 24),
-        y: Math.max(16, window.innerHeight - defaultH - 24),
-        width: defaultW,
-      });
-    }
-  }, [windowBounds]);
-
-  // منع سحب وتمرير الصفحة في الخلفية أثناء تحريك أو تكبير المشغل باللمس على الموبايل
-  useEffect(() => {
-    if (isDragging || isResizing) {
-      document.body.style.userSelect = 'none';
-      document.body.style.touchAction = 'none';
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.userSelect = '';
-      document.body.style.touchAction = '';
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.userSelect = '';
-      document.body.style.touchAction = '';
-      document.body.style.overflow = '';
-    };
-  }, [isDragging, isResizing]);
 
   const handleClose = () => {
     if (playerRef.current) {
@@ -112,35 +113,60 @@ export default function Player() {
     setTimeout(() => setCopiedTimestamp(false), 2500);
   };
 
-  const setTimer = (mins: number | null) => {
-    if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
-    setSleepTimer(mins);
+  // وظيفة ضبط مؤقت النوم
+  const setTimer = (mins: number | 'end' | null) => {
+    // تنظيف المؤقت الحالي إن وجد
+    if (sleepTimerIntervalRef.current) clearInterval(sleepTimerIntervalRef.current);
+    
     setShowSleepMenu(false);
+    
+    if (mins === null) {
+      setSleepTimerMinutes(null);
+      setSleepTimerTimeLeft(null);
+      setStopAtEndOfVideo(false);
+      return;
+    }
 
-    if (mins !== null) {
-      sleepTimerRef.current = setTimeout(() => {
-        if (playerRef.current) {
-          playerRef.current.pauseVideo();
-          setIsPlaying(false);
-        }
-        setSleepTimer(null);
-      }, mins * 60 * 1000);
+    if (mins === 'end') {
+      setStopAtEndOfVideo(true);
+      setSleepTimerMinutes(null);
+      setSleepTimerTimeLeft(null);
+    } else {
+      setStopAtEndOfVideo(false);
+      setSleepTimerMinutes(mins);
+      const seconds = mins * 60;
+      setSleepTimerTimeLeft(seconds);
+
+      // بدء العداد التنازلي الحي
+      sleepTimerIntervalRef.current = setInterval(() => {
+        setSleepTimerTimeLeft((prev) => {
+          if (prev === null) return null;
+          if (prev <= 1) {
+            // انتهى الوقت، أوقف التشغيل
+            if (playerRef.current) {
+              playerRef.current.pauseVideo();
+              setIsPlaying(false);
+            }
+            if (sleepTimerIntervalRef.current) clearInterval(sleepTimerIntervalRef.current);
+            setSleepTimerMinutes(null);
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     }
   };
 
-  // بدء التحجيم مع دعم كامل للمس والأصابع
+  // بدء التحجيم الطبيعي السلس من الزوايا الأربع
   const startResizeFromCorner = (corner: 'tl' | 'tr' | 'bl' | 'br') => (e: React.PointerEvent) => {
     e.stopPropagation();
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 
-    if (!windowBounds) return;
     resizeOriginRef.current = {
       startX: e.clientX,
       startY: e.clientY,
-      startW: windowBounds.width,
-      startPosX: windowBounds.x,
-      startPosY: windowBounds.y,
+      startW: windowWidth,
       corner,
     };
     setIsResizing(true);
@@ -148,15 +174,11 @@ export default function Player() {
 
   // بدء السحب الحر للنافذة
   const handleDragStart = (e: React.PointerEvent) => {
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-
-    if (!windowBounds) return;
     dragStartRef.current = {
       startX: e.clientX,
       startY: e.clientY,
-      posX: windowBounds.x,
-      posY: windowBounds.y,
+      posX: position.x,
+      posY: position.y,
     };
     setIsDragging(true);
   };
@@ -164,39 +186,28 @@ export default function Player() {
   useEffect(() => {
     const handlePointerMove = (e: PointerEvent) => {
       if (isResizing && resizeOriginRef.current) {
-        const { startX, startW, startPosX, startPosY, corner } = resizeOriginRef.current;
+        const { startX, startY, startW, corner } = resizeOriginRef.current;
         const deltaX = e.clientX - startX;
-        const minW = 260;
-        const maxW = typeof window !== 'undefined' ? Math.min(window.innerWidth - 24, 760) : 760;
+        const deltaY = e.clientY - startY;
 
-        let newW = startW;
-        let newX = startPosX;
-        let newY = startPosY;
-
-        if (corner === 'br') {
-          newW = Math.min(Math.max(minW, startW + deltaX), maxW);
-          newX = startPosX;
-          newY = startPosY;
-        } else if (corner === 'bl') {
-          newW = Math.min(Math.max(minW, startW - deltaX), maxW);
-          newX = startPosX + (startW - newW);
-          newY = startPosY;
+        let delta = 0;
+        if (corner === 'tl') {
+          delta = (-deltaX + (-deltaY * (16 / 9))) / 2;
         } else if (corner === 'tr') {
-          newW = Math.min(Math.max(minW, startW + deltaX), maxW);
-          newX = startPosX;
-          newY = startPosY - (newW - startW) * (9 / 16);
-        } else if (corner === 'tl') {
-          newW = Math.min(Math.max(minW, startW - deltaX), maxW);
-          newX = startPosX + (startW - newW);
-          newY = startPosY - (newW - startW) * (9 / 16);
+          delta = (deltaX + (-deltaY * (16 / 9))) / 2;
+        } else if (corner === 'bl') {
+          delta = (-deltaX + (deltaY * (16 / 9))) / 2;
+        } else if (corner === 'br') {
+          delta = (deltaX + (deltaY * (16 / 9))) / 2;
         }
 
-        setWindowBounds({ x: newX, y: newY, width: newW });
-      } else if (isDragging && dragStartRef.current && windowBounds) {
+        const maxAllowed = typeof window !== 'undefined' ? Math.min(window.innerWidth - 24, 760) : 760;
+        const newW = Math.min(Math.max(260, startW + delta), maxAllowed);
+        setWindowWidth(newW);
+      } else if (isDragging && dragStartRef.current) {
         const deltaX = e.clientX - dragStartRef.current.startX;
         const deltaY = e.clientY - dragStartRef.current.startY;
-        setWindowBounds({
-          ...windowBounds,
+        setPosition({
           x: dragStartRef.current.posX + deltaX,
           y: dragStartRef.current.posY + deltaY,
         });
@@ -204,6 +215,10 @@ export default function Player() {
     };
 
     const handlePointerUp = () => {
+      if (isDragging && position.y > 110) {
+        setMode('audio');
+        setPosition({ x: 0, y: 0 });
+      }
       setIsDragging(false);
       setIsResizing(false);
       dragStartRef.current = null;
@@ -211,18 +226,17 @@ export default function Player() {
     };
 
     if (isDragging || isResizing) {
-      window.addEventListener('pointermove', handlePointerMove, { passive: false });
+      window.addEventListener('pointermove', handlePointerMove);
       window.addEventListener('pointerup', handlePointerUp);
-      window.addEventListener('pointercancel', handlePointerUp);
     }
 
     return () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
-      window.removeEventListener('pointercancel', handlePointerUp);
     };
-  }, [isDragging, isResizing, windowBounds]);
+  }, [isDragging, isResizing, position.y, setMode]);
 
+  // التفاعل اللحظي مع شريط الصوت
   const handleSeekEvent = (clientX: number) => {
     if (!trackRef.current || !playerRef.current || duration === 0) return;
     const rect = trackRef.current.getBoundingClientRect();
@@ -233,21 +247,19 @@ export default function Player() {
   };
 
   const handleTrackPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     handleSeekEvent(e.clientX);
   };
 
   const handleTrackPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.buttons === 1) {
-      e.preventDefault();
       handleSeekEvent(e.clientX);
     }
   };
 
   useEffect(() => {
     return () => {
-      if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+      if (sleepTimerIntervalRef.current) clearInterval(sleepTimerIntervalRef.current);
     };
   }, []);
 
@@ -353,9 +365,20 @@ export default function Player() {
                 setIsPlaying(false);
                 stopTimeTracking();
               } else if (event.data === 0) {
-                setIsPlaying(false);
-                stopTimeTracking();
-                handleNext();
+                // انتهى الفيديو
+                if (stopAtEndOfVideo) {
+                  // ميزة التوقف عند نهاية الفيديو مفعلة
+                  setIsPlaying(false);
+                  stopTimeTracking();
+                  // تنظيف المؤقت
+                  setSleepTimerMinutes(null);
+                  setStopAtEndOfVideo(false);
+                } else {
+                  // التشغيل التالي التلقائي العادي
+                  setIsPlaying(false);
+                  stopTimeTracking();
+                  handleNext();
+                }
               }
             },
           },
@@ -375,7 +398,7 @@ export default function Player() {
         try { playerRef.current.destroy(); } catch (e) {}
       }
     };
-  }, [currentEpisode?.youtube_video_id]);
+  }, [currentEpisode?.youtube_video_id, stopAtEndOfVideo]);
 
   const startTimeTracking = () => {
     stopTimeTracking();
@@ -450,59 +473,45 @@ export default function Player() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  // تنسيق الوقت المتبقي للمؤقت (مثال: 12 د)
+  const formatTimerLeft = (secs: number | null) => {
+    if (secs === null) return '';
+    const m = Math.ceil(secs / 60);
+    return `${m} د`;
+  };
+
   if (!currentEpisode) return null;
 
   const progressRatio = duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
   const progressPercent = progressRatio * 100;
 
+  const timerActive = sleepTimerMinutes !== null || stopAtEndOfVideo;
+
   return (
     <div
-      style={
-        mode === 'video' && windowBounds
-          ? {
-              position: 'fixed',
-              left: `${windowBounds.x}px`,
-              top: `${windowBounds.y}px`,
-              width: `${windowBounds.width}px`,
-              maxWidth: '96vw',
-              touchAction: 'none',
-            }
-          : undefined
-      }
+      style={{
+        transform: mode === 'video' ? `translate3d(${position.x}px, ${position.y}px, 0)` : 'none',
+        width: mode === 'video' ? `${windowWidth}px` : '100%',
+        maxWidth: mode === 'video' ? '96vw' : '100%',
+      }}
       className={`fixed z-50 transition-all ${isDragging || isResizing ? 'duration-0 select-none' : 'duration-300'} ${
         mode === 'video'
-          ? 'bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl backdrop-blur-2xl overflow-hidden'
+          ? 'bottom-6 right-6 bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl backdrop-blur-2xl overflow-hidden'
           : 'bottom-0 inset-x-0 bg-zinc-950/90 border-t border-zinc-800/80 backdrop-blur-2xl px-4 py-3'
       }`}
     >
-      {/* مقابض التحجيم العريضة (44px) للمس بالأصابع على الموبايل والتابلت بدون تداخل مع الشاشة */}
+      {/* مقابض التحجيم */}
       {mode === 'video' && (
         <>
-          <div
-            onPointerDown={startResizeFromCorner('tl')}
-            className="absolute top-0 left-0 w-11 h-11 z-40 cursor-nwse-resize select-none touch-none"
-            title="تكبير أو تصغير"
-          />
-          <div
-            onPointerDown={startResizeFromCorner('tr')}
-            className="absolute top-0 right-0 w-11 h-11 z-40 cursor-nesw-resize select-none touch-none"
-            title="تكبير أو تصغير"
-          />
-          <div
-            onPointerDown={startResizeFromCorner('bl')}
-            className="absolute bottom-0 left-0 w-11 h-11 z-40 cursor-nesw-resize select-none touch-none"
-            title="تكبير أو تصغير"
-          />
-          <div
-            onPointerDown={startResizeFromCorner('br')}
-            className="absolute bottom-0 right-0 w-11 h-11 z-40 cursor-nwse-resize select-none touch-none"
-            title="تكبير أو تصغير"
-          />
+          <div onPointerDown={startResizeFromCorner('tl')} className="absolute top-0 left-0 w-8 h-8 z-40 cursor-nwse-resize select-none" title="اسحب لتكبير وتصغير النافذة" />
+          <div onPointerDown={startResizeFromCorner('tr')} className="absolute top-0 right-0 w-8 h-8 z-40 cursor-nesw-resize select-none" title="اسحب لتكبير وتصغير النافذة" />
+          <div onPointerDown={startResizeFromCorner('bl')} className="absolute bottom-0 left-0 w-8 h-8 z-40 cursor-nesw-resize select-none" title="اسحب لتكبير وتصغير النافذة" />
+          <div onPointerDown={startResizeFromCorner('br')} className="absolute bottom-0 right-0 w-8 h-8 z-40 cursor-nwse-resize select-none" title="اسحب لتكبير وتصغير النافذة" />
 
-          {/* شريط السحب الحر العلوي مع حماية اللمس التامة touch-none */}
+          {/* شريط السحب الحر العلوي */}
           <div
             onPointerDown={handleDragStart}
-            className="w-full bg-zinc-900/90 py-2 px-3 flex items-center justify-between cursor-grab active:cursor-grabbing border-b border-zinc-800/60 select-none touch-none relative"
+            className="w-full bg-zinc-900/90 py-2 px-3 flex items-center justify-between cursor-grab active:cursor-grabbing border-b border-zinc-800/60 select-none relative"
           >
             <button
               onClick={() => setMode('audio')}
@@ -511,9 +520,7 @@ export default function Player() {
             >
               <ChevronDown className="w-4 h-4" />
             </button>
-
             <div className="w-12 h-1 bg-zinc-600 rounded-full pointer-events-none" />
-
             <button
               onClick={handleClose}
               className="text-zinc-400 hover:text-white p-1 rounded-lg"
@@ -525,8 +532,8 @@ export default function Player() {
         </>
       )}
 
-      {/* مشغل يوتيوب بنسبة 16:9 ثابتة */}
-      <div className={`${mode === 'video' ? 'w-full aspect-video bg-black relative select-none' : 'hidden'}`}>
+      {/* مشغل يوتيوب */}
+      <div className={`${mode === 'video' ? 'w-full aspect-video bg-black relative' : 'hidden'}`}>
         <div
           className="absolute inset-0 z-20"
           style={{ pointerEvents: isDragging || isResizing ? 'auto' : 'none' }}
@@ -535,26 +542,36 @@ export default function Player() {
       </div>
       {mode === 'audio' && <div id="youtube-player" className="hidden" />}
 
-      {/* شريط التحكم السفلي المحمي من التمدد */}
-      <div className="flex flex-col gap-2 p-2 sm:p-3 relative overflow-hidden select-none">
+      {/* شريط التحكم السفلي */}
+      <div className="flex flex-col gap-2 p-2 sm:p-3 relative overflow-hidden">
+        
+        {/* قائمة مؤقت النوم المنسدلة النظيفة */}
         {showSleepMenu && (
-          <div className="absolute bottom-full mb-3 left-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-2 shadow-2xl flex flex-col gap-1 z-50 min-w-[140px] text-right">
+          <div className="absolute bottom-full mb-3 left-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-2 shadow-2xl flex flex-col gap-1 z-50 min-w-[140px] text-right animate-card-fade">
             <span className="text-[10px] text-zinc-500 font-bold px-2 py-1">مؤقت النوم</span>
             {[15, 30, 45, 60].map((mins) => (
               <button
                 key={mins}
                 onClick={() => setTimer(mins)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold text-right transition-colors ${
-                  sleepTimer === mins ? 'bg-amber-400 text-zinc-950' : 'text-zinc-300 hover:bg-zinc-800'
+                  sleepTimerMinutes === mins ? 'bg-amber-400 text-zinc-950' : 'text-zinc-300 hover:bg-zinc-800'
                 }`}
               >
                 بعد {mins} دقيقة
               </button>
             ))}
-            {sleepTimer && (
+            <button
+              onClick={() => setTimer('end')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold text-right transition-colors ${
+                stopAtEndOfVideo ? 'bg-amber-400 text-zinc-950' : 'text-zinc-300 hover:bg-zinc-800'
+              }`}
+            >
+              لنهاية الفيديو 🔚
+            </button>
+            {timerActive && (
               <button
                 onClick={() => setTimer(null)}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold text-red-400 hover:bg-red-950/30 text-right"
+                className="px-3 py-1.5 rounded-xl text-xs font-bold text-red-400 hover:bg-red-950/30 text-right mt-1 border-t border-zinc-800 pt-2"
               >
                 إلغاء المؤقت
               </button>
@@ -562,7 +579,7 @@ export default function Player() {
           </div>
         )}
 
-        {/* رأس المشغل: عنوان بسطر واحد يقتطع بنعومة */}
+        {/* رأس المشغل */}
         <div className="flex items-center justify-between gap-3 h-10 flex-shrink-0 overflow-hidden">
           <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
             <img
@@ -602,6 +619,7 @@ export default function Player() {
             <button
               onClick={() => {
                 setMode(mode === 'audio' ? 'video' : 'audio');
+                setPosition({ x: 0, y: 0 });
               }}
               className="px-2 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs font-bold text-zinc-300 hover:text-white"
             >
@@ -619,45 +637,57 @@ export default function Player() {
           </div>
         </div>
 
-        {/* شريط صوت نبض المايك والتوهج المتنفس (Voice Breath & Mic Pulse Scrubber) */}
+        {/* شريط سامسونج One UI 9 */}
         <div dir="ltr" className="flex items-center gap-3 text-[11px] text-zinc-400 font-mono select-none px-1">
           <span className="w-10 text-right font-medium">{formatTime(currentTime)}</span>
-          
           <div
             ref={trackRef}
             onPointerDown={handleTrackPointerDown}
             onPointerMove={handleTrackPointerMove}
-            className="flex-1 h-7 relative flex items-center cursor-pointer group touch-none select-none"
+            className="flex-1 h-7 relative flex items-center cursor-pointer group"
             title="انقر أو اسحب للانتقال في التوقيت"
           >
-            {/* مسار الخلفية الرمادي الهادئ */}
-            <div className="w-full h-1.5 rounded-full bg-zinc-800 group-hover:bg-zinc-700/80 transition-colors overflow-hidden relative">
-              {/* المسار الملون المتوهج بنبض تنفس الصوت أثناء التشغيل */}
-              <div
-                style={{ width: `${progressPercent}%` }}
-                className={`h-full rounded-full bg-gradient-to-r from-amber-600 via-amber-500 to-amber-300 transition-all ${
-                  isPlaying ? 'animate-voice-breath' : 'opacity-85'
-                }`}
+            <svg className="w-full h-6 overflow-visible" preserveAspectRatio="none" viewBox="0 0 1000 24">
+              <defs>
+                <linearGradient id="oneUiSurfaceGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#ea580c" />
+                  <stop offset="70%" stopColor="#f59e0b" />
+                  <stop offset="100%" stopColor="#fbbf24" />
+                </linearGradient>
+                <clipPath id="oneUiSurfaceClip">
+                  <rect x="0" y="0" width={`${progressRatio * 1000}`} height="24" />
+                </clipPath>
+              </defs>
+              <line
+                x1={`${progressRatio * 1000}`}
+                y1="16"
+                x2="1000"
+                y2="16"
+                stroke="rgba(255, 255, 255, 0.2)"
+                strokeWidth="3.2"
+                strokeLinecap="round"
               />
-            </div>
-
-            {/* مؤشر الصوت النابض مع هالة اهتزاز المايكروفون (Mic Vibration Ring) */}
+              <g clipPath="url(#oneUiSurfaceClip)">
+                <path
+                  d={ONE_UI_SURFACE_PATH}
+                  fill="none"
+                  stroke="url(#oneUiSurfaceGrad)"
+                  strokeWidth="3.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={isPlaying ? 'animate-oneui-surface' : ''}
+                />
+              </g>
+            </svg>
             <div
-              style={{ left: `${progressPercent}%` }}
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 pointer-events-none flex items-center justify-center transition-all duration-75"
+              style={{ left: `${progressPercent}%`, top: '16px' }}
+              className="absolute -translate-y-1/2 -translate-x-1/2 pointer-events-none flex items-center justify-center transition-all duration-75"
             >
-              {/* حلقة اهتزاز المايك الحركية التي تتسع وتضيق مع الصوت */}
-              {isPlaying && (
-                <div className="absolute w-7 h-7 rounded-full border border-amber-400/80 animate-mic-pulse pointer-events-none" />
-              )}
-              
-              {/* النواة الصلبة الأنيقة للمؤشر */}
-              <div className="relative w-3.5 h-3.5 rounded-full bg-white shadow-md border-2 border-amber-500 flex items-center justify-center group-hover:scale-125 transition-transform">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              <div className="w-3.5 h-3.5 rounded-full bg-amber-400 border-2 border-white shadow-md flex items-center justify-center">
+                <div className="w-1 h-1 rounded-full bg-amber-600" />
               </div>
             </div>
           </div>
-
           <span className="w-10 text-left font-medium">{formatTime(duration)}</span>
         </div>
 
@@ -667,7 +697,6 @@ export default function Player() {
             <button onClick={toggleMute} className="text-zinc-400 hover:text-white p-1">
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
-
             <button
               onClick={changeSpeed}
               className="text-[11px] font-bold font-mono px-2 py-0.5 rounded-lg bg-zinc-900 text-amber-400 border border-zinc-800"
@@ -675,15 +704,26 @@ export default function Player() {
               {playbackRate}x
             </button>
 
-            <button
-              onClick={() => setShowSleepMenu(!showSleepMenu)}
-              title="مؤقت النوم"
-              className={`p-1.5 rounded-lg transition-colors ${
-                sleepTimer ? 'bg-amber-400/20 text-amber-400 border border-amber-400/40' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <Moon className="w-3.5 h-3.5" />
-            </button>
+            {/* زر مؤقت النوم الجديد مع العداد التنازلي الحي */}
+            <div className="flex items-center gap-1.5 relative">
+              <button
+                onClick={() => setShowSleepMenu(!showSleepMenu)}
+                title="مؤقت النوم"
+                className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 ${
+                  timerActive ? 'bg-amber-400/20 text-amber-400 border border-amber-400/40' : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Moon className="w-3.5 h-3.5" />
+                {timerActive && stopAtEndOfVideo && (
+                  <span className="text-[10px] font-bold">🔚</span>
+                )}
+              </button>
+              {timerActive && sleepTimerTimeLeft !== null && (
+                <span className="text-[11px] font-mono text-amber-300 font-medium">
+                  {formatTimerLeft(sleepTimerTimeLeft)}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4">
@@ -693,14 +733,12 @@ export default function Player() {
             <button onClick={() => seekRelative(-15)} title="رجوع 15 ثانية" className="text-zinc-400 hover:text-white">
               <RotateCcw className="w-4 h-4" />
             </button>
-
             <button
               onClick={togglePlay}
               className="w-9 h-9 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 flex items-center justify-center shadow-lg transition-transform active:scale-95"
             >
               {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
             </button>
-
             <button onClick={() => seekRelative(15)} title="تقديم 15 ثانية" className="text-zinc-400 hover:text-white">
               <RotateCw className="w-4 h-4" />
             </button>
@@ -708,7 +746,6 @@ export default function Player() {
               <SkipForward className="w-4 h-4" />
             </button>
           </div>
-
           <div className="w-12" />
         </div>
       </div>
