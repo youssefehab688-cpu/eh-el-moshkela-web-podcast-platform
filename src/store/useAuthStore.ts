@@ -22,10 +22,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   closeAuthModal: () => set({ isAuthModalOpen: false }),
 
   initAuth: () => {
+    // 1. التحقق الفوري من وجود جلسة سابقة محفوظة على الجهاز
     supabase.auth.getSession().then(({ data: { session } }) => {
       set({ user: session?.user ?? null, loading: false });
     });
 
+    // 2. الاستماع لأي تغيير في حالة الدخول والخروج وتثبيته
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {

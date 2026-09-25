@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import SearchModal from './SearchModal';
+import AuthModal from './AuthModal';
 import { 
   Radio, Search, Bookmark, BookOpen, 
   User as UserIcon, LogOut, ChevronDown 
@@ -12,16 +13,22 @@ import {
 
 export default function Navbar() {
   const router = useRouter();
-  const { user, openAuthModal, signOut } = useAuthStore();
+  const { user, openAuthModal, signOut, initAuth } = useAuthStore();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  // تشغيل الاستماع التلقائي للجلسة فور تحميل الصفحة
+  useEffect(() => {
+    const unsubscribe = initAuth();
+    return () => unsubscribe();
+  }, [initAuth]);
 
   return (
     <>
       <header className="sticky top-0 z-40 w-full border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md">
         <div className="container mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
           
-          {/* Logo */}
+          {/* الشعار */}
           <Link href="/" className="flex items-center gap-2.5 group">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-900 border border-zinc-800 group-hover:border-zinc-700 transition-colors">
               <Radio className="h-4 w-4 text-slate-200" />
@@ -32,7 +39,7 @@ export default function Navbar() {
             </div>
           </Link>
 
-          {/* Navigation Links */}
+          {/* روابط التصفح */}
           <nav className="hidden md:flex items-center gap-6 text-xs font-bold text-zinc-300">
             <Link href="/" className="hover:text-white transition-colors">الرئيسية</Link>
             <Link href="/#series" className="hover:text-white transition-colors">المواسم</Link>
@@ -40,7 +47,7 @@ export default function Navbar() {
             <Link href="/notes" className="hover:text-white transition-colors">الملاحظات</Link>
           </nav>
 
-          {/* Actions */}
+          {/* أزرار الإجراءات */}
           <div className="flex items-center gap-2.5">
             <button
               onClick={() => setIsSearchOpen(true)}
@@ -56,7 +63,7 @@ export default function Navbar() {
                   onClick={() => setIsMenuOpen(!isMenuOpen)}
                   className="flex items-center gap-2 pl-2 pr-1 py-1 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-colors"
                 >
-                  <div className="h-7 w-7 rounded-lg overflow-hidden bg-zinc-800 flex items-center justify-center">
+                  <div className="h-7 w-7 rounded-lg overflow-hidden bg-zinc-800 flex items-center justify-center ring-1 ring-zinc-700">
                     {user.user_metadata?.avatar_url ? (
                       <img src={user.user_metadata.avatar_url} alt="Profile" className="h-full w-full object-cover" />
                     ) : (
@@ -124,6 +131,7 @@ export default function Navbar() {
       </header>
 
       <SearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
+      <AuthModal />
     </>
   );
 }
