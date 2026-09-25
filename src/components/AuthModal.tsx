@@ -2,80 +2,113 @@
 
 import { useState } from 'react';
 import { useAuthStore } from '@/store/useAuthStore';
-import { X, Sparkles } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { X, Sparkles, AlertCircle } from 'lucide-react';
 
 export default function AuthModal() {
-  const { isAuthModalOpen, closeAuthModal, signInWithGoogle } = useAuthStore();
+  const { isAuthModalOpen, closeAuthModal } = useAuthStore();
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isAuthModalOpen) return null;
 
   const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setErrorMsg(null);
     try {
-      setLoading(true);
-      await signInWithGoogle();
-    } catch (err) {
-      console.error('Sign in error:', err);
+      const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/` : '';
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+        },
+      });
+
+      if (error) {
+        setErrorMsg(error.message);
+        setLoading(false);
+      }
+    } catch (err: any) {
+      setErrorMsg('حدث خطأ أثناء الاتصال بخدمة تسجيل الدخول');
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="relative w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl flex flex-col items-center text-center gap-5 text-right">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-card-fade">
+      {/* خلفية تغلق المودال عند النقر خارجها */}
+      <div className="absolute inset-0" onClick={closeAuthModal} />
+
+      <div className="relative z-10 w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-2xl text-right overflow-hidden">
+        
+        {/* توهج خافت في أعلى النافذة */}
+        <div className="absolute -top-12 -right-12 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        {/* زر الإغلاق */}
         <button
           onClick={closeAuthModal}
-          className="absolute left-4 top-4 text-zinc-400 hover:text-white p-1 rounded-xl hover:bg-zinc-800 transition-colors"
+          className="absolute top-5 left-5 p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors"
         >
           <X className="w-5 h-5" />
         </button>
 
-        <div className="h-12 w-12 rounded-2xl bg-zinc-800 border border-zinc-700/80 flex items-center justify-center text-amber-400 mt-2">
-          <Sparkles className="w-6 h-6" />
-        </div>
+        {/* محتوى النافذة */}
+        <div className="flex flex-col gap-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/20 text-amber-400 text-xs font-bold w-fit">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>منصة إيه المشكلة وعالـمغرب</span>
+          </div>
 
-        <div className="flex flex-col gap-1.5 text-center">
-          <h3 className="text-lg font-black text-white">تسجيل الدخول للمنصة</h3>
-          <p className="text-xs text-zinc-400 max-w-xs leading-relaxed">
-            سجل دخولك بحساب Google لمزامنة تقدمك في الحلقات، تدوين الفوائد والملاحظات، ومتابعة ساعات الاستماع من أي جهاز.
+          <h2 className="text-xl sm:text-2xl font-black text-white">
+            تسجيل الدخول للمنصة
+          </h2>
+
+          <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed">
+            سجّل دخولك لحفظ فوائدك وملاحظاتك ومزامنتها، ومتابعة الحلقات المفضلة والمستمع إليها عبر جميع أجهزتك.
           </p>
-        </div>
 
-        <button
-          onClick={handleGoogleSignIn}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-2xl bg-white hover:bg-zinc-200 text-zinc-950 font-bold text-xs sm:text-sm transition-all shadow-md active:scale-95 disabled:opacity-50"
-        >
-          {loading ? (
-            <div className="h-5 w-5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <>
-              <svg className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" viewBox="0 0 24 24">
+          {errorMsg && (
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-red-950/40 border border-red-800/60 text-red-300 text-xs">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {/* زر Google الرسمي */}
+          <button
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+            className="mt-3 flex items-center justify-center gap-3 w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-zinc-200 text-zinc-950 font-black text-xs sm:text-sm transition-all shadow-lg active:scale-95 disabled:opacity-50"
+          >
+            {loading ? (
+              <div className="w-5 h-5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path
                   fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.87c2.26-2.09 3.67-5.17 3.67-9.15z"
                 />
                 <path
                   fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.87-3.05c-1.08.72-2.45 1.16-4.06 1.16-3.13 0-5.78-2.11-6.73-4.96H1.27v3.15C3.25 21.32 7.31 24 12 24z"
                 />
                 <path
                   fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  d="M5.27 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.61H1.27C.46 8.23 0 10.06 0 12s.46 3.77 1.27 5.39l4-3.15z"
                 />
                 <path
                   fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.25 2.68 1.27 6.61l4 3.15c.95-2.85 3.6-4.96 6.73-4.96z"
                 />
               </svg>
-              <span>المتابعة باستخدام Google</span>
-            </>
-          )}
-        </button>
+            )}
+            <span>{loading ? 'جاري الاتصال بـ Google...' : 'المتابعة باستخدام حساب Google'}</span>
+          </button>
 
-        <p className="text-[10px] text-zinc-500 text-center">
-          بياناتك وملاحظاتك محفوظة ومحمية بأمان على السحابة.
-        </p>
+          <span className="text-[10px] text-zinc-500 text-center mt-1">
+            تسجيل الدخول آمن ومشفر تماماً عبر خوادم Supabase
+          </span>
+        </div>
       </div>
     </div>
   );

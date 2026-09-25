@@ -1,53 +1,22 @@
 import { create } from 'zustand';
-import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
 
 interface AuthState {
   user: User | null;
-  loading: boolean;
   isAuthModalOpen: boolean;
+  setUser: (user: User | null) => void;
   openAuthModal: () => void;
   closeAuthModal: () => void;
-  initAuth: () => () => void;
-  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  loading: true,
   isAuthModalOpen: false,
-
+  setUser: (user) => set({ user }),
   openAuthModal: () => set({ isAuthModalOpen: true }),
   closeAuthModal: () => set({ isAuthModalOpen: false }),
-
-  initAuth: () => {
-    // 1. التحقق الفوري من وجود جلسة سابقة محفوظة على الجهاز
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      set({ user: session?.user ?? null, loading: false });
-    });
-
-    // 2. الاستماع لأي تغيير في حالة الدخول والخروج وتثبيته
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      set({ user: session?.user ?? null, loading: false });
-    });
-
-    return () => subscription.unsubscribe();
-  },
-
-  signInWithGoogle: async () => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${origin}/auth/callback`,
-      },
-    });
-    if (error) throw error;
-  },
-
   signOut: async () => {
     await supabase.auth.signOut();
     set({ user: null });
