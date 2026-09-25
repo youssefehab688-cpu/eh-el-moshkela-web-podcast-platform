@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import SearchModal from './SearchModal';
 import AuthModal from './AuthModal';
 import { 
-  Radio, Search, Bookmark, BookOpen, 
+  Search, Bookmark, BookOpen, 
   User as UserIcon, LogOut, ChevronDown 
 } from 'lucide-react';
 
@@ -17,7 +17,6 @@ export default function Navbar() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // تشغيل الاستماع التلقائي للجلسة فور تحميل الصفحة
   useEffect(() => {
     const unsubscribe = initAuth();
     return () => unsubscribe();
@@ -28,10 +27,14 @@ export default function Navbar() {
       <header className="sticky top-0 z-40 w-full border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md">
         <div className="container mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
           
-          {/* الشعار */}
+          {/* اللوجو الرسمي لبودكاست إيه المشكلة */}
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-900 border border-zinc-800 group-hover:border-zinc-700 transition-colors">
-              <Radio className="h-4 w-4 text-slate-200" />
+            <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 group-hover:border-zinc-700 transition-all flex items-center justify-center shadow-inner">
+              <img
+                src="/logo.png"
+                alt="لوجو بودكاست إيه المشكلة"
+                className="h-full w-full object-cover"
+              />
             </div>
             <div className="flex flex-col">
               <span className="text-sm font-black text-white tracking-tight">إيه المشكلة؟</span>
