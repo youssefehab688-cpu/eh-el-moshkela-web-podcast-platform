@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#18181b"/>
+      <stop offset="50%" stop-color="#09090b"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+    <linearGradient id="silverGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="50%" stop-color="#cbd5e1"/>
+      <stop offset="100%" stop-color="#64748b"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="none" stroke="url(#silverGrad)" stroke-width="8" opacity="0.4"/>
+  <!-- Microphone & Soundwave Symbol -->
+  <circle cx="256" cy="220" r="70" fill="url(#silverGrad)"/>
+  <path d="M196 230 C196 270 316 270 316 230" fill="none" stroke="#09090b" stroke-width="14" stroke-linecap="round"/>
+  <path d="M166 210 C166 290 346 290 346 210" fill="none" stroke="url(#silverGrad)" stroke-width="20" stroke-linecap="round"/>
+  <line x1="256" y1="300" x2="256" y2="370" stroke="url(#silverGrad)" stroke-width="20" stroke-linecap="round"/>
+  <line x1="200" y1="370" x2="312" y2="370" stroke="url(#silverGrad)" stroke-width="20" stroke-linecap="round"/>
+</svg>
