@@ -1,443 +1,427 @@
 'use client';
 
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Episode } from '@/types';
 import Navbar from '@/components/Navbar';
 import Player from '@/components/Player';
-import EpisodeNotes from '@/components/EpisodeNotes';
+import { useAuthStore } from '@/store/useAuthStore';
 import { usePlayerStore } from '@/store/usePlayerStore';
-import { useBookmarkStore } from '@/store/useBookmarkStore';
-import { formatTime } from '@/lib/utils';
+import { toPng } from 'html-to-image';
 import { 
-  Play, Pause, ArrowRight, Share2, 
-  Clock, Check, Radio, Moon, Headphones, Video, Sparkles, BookOpen, Bookmark
+  ArrowRight, Bookmark, Share2, Sparkles, BookOpen, 
+  Clock, Download, Eye, Maximize, Minimize, Plus, Trash2, Check
 } from 'lucide-react';
 
-declare global {
-  interface Window {
-    onYouTubeIframeAPIReady?: () => void;
-    YT?: any;
-  }
+interface NoteItem {
+  id: string;
+  timestamp_seconds: number;
+  content: string;
+  created_at: string;
 }
 
-function YoutubeIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-    </svg>
-  );
+function formatSeconds(secs: number) {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
 export default function EpisodeDetailsPage() {
   const params = useParams();
   const router = useRouter();
-  const slug = params?.slug as string;
+  const { user, openAuthModal } = useAuthStore();
+  const { playEpisode } = usePlayerStore();
 
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState(false);
-  const ytPlayerRef = useRef<any>(null);
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
 
-  const { 
-    currentEpisode, 
-    isPlaying, 
-    currentTime, 
-    duration,
-    mode,
-    playEpisode, 
-    pauseEpisode,
-    resumeEpisode,
-    setCurrentTime, 
-    setDuration, 
-    setIsPlaying,
-    setPlaylist,
-    setMode,
-    playNext
-  } = usePlayerStore();
+  // الملاحظات
+  const [notes, setNotes] = useState<NoteItem[]>([]);
+  const [newNoteContent, setNewNoteContent] = useState('');
+  const [noteTimestamp, setNoteTimestamp] = useState(0);
+  const [isSavingNote, setIsSavingNote] = useState(false);
 
-  const { isBookmarked, toggleBookmark, loadBookmarks } = useBookmarkStore();
+  // كارت المشاركة المولد
+  const [activeCardNote, setActiveCardNote] = useState<NoteItem | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+
+  const slug = params?.slug as string;
 
   useEffect(() => {
-    loadBookmarks();
-  }, [loadBookmarks]);
-
-  const isCurrentActive = currentEpisode?.id === episode?.id;
-  const hasStarted = currentTime > 1;
-  const bookmarked = episode ? isBookmarked(episode.id) : false;
-
-  useEffect(() => {
-    async function loadEpisodeAndPlaylist() {
+    async function loadEpisodeData() {
       if (!slug) return;
+
       try {
         const { data, error } = await supabase
           .from('episodes')
-          .select('*, recommendations(*)')
-          .eq('slug', slug)
+          .select('*')
+          .or(`slug.eq.${slug},id.eq.${slug}`)
           .single();
 
         if (!error && data) {
-          const ep = data as Episode;
-          setEpisode(ep);
+          setEpisode(data);
 
-          const storeEp = usePlayerStore.getState().currentEpisode;
-          if (!storeEp || storeEp.id !== ep.id) {
-            usePlayerStore.getState().playEpisode(ep, mode, 0);
-          }
-
-          const { data: allEpisodes } = await supabase
-            .from('episodes')
-            .select('*');
-
-          if (allEpisodes && allEpisodes.length > 0) {
-            const sorted = [...allEpisodes].sort((a, b) => {
-              if (Number(a.season) !== Number(b.season)) {
-                return Number(a.season) - Number(b.season);
-              }
-              return Number(a.episode_number) - Number(b.episode_number);
-            });
-            setPlaylist(sorted as Episode[]);
+          // قراءة التوقيت المنقول من المشغل إن وجد
+          const seekTarget = localStorage.getItem('eh_el_moshkla_seek_target');
+          if (seekTarget) {
+            setNoteTimestamp(Math.floor(parseFloat(seekTarget)));
+            localStorage.removeItem('eh_el_moshkla_seek_target');
           }
         }
       } catch (err) {
-        console.error(err);
+        console.error('Error loading episode:', err);
       } finally {
         setLoading(false);
       }
     }
-    loadEpisodeAndPlaylist();
-  }, [slug, setPlaylist]);
 
+    loadEpisodeData();
+  }, [slug]);
+
+  // جلب الملاحظات وحالة المفضلة عند تسجيل الدخول
   useEffect(() => {
-    if (!episode) return;
+    async function fetchUserData() {
+      if (!user || !episode) return;
 
-    const initPlayer = () => {
-      if (!window.YT || !window.YT.Player) return;
+      // فحص المفضلة
+      const { data: bData } = await supabase
+        .from('bookmarks')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('episode_id', episode.id)
+        .maybeSingle();
 
-      if (ytPlayerRef.current) {
-        try {
-          ytPlayerRef.current.destroy();
-        } catch {}
-      }
+      setIsBookmarked(!!bData);
 
-      ytPlayerRef.current = new window.YT.Player('yt-embed-player', {
-        videoId: episode.youtube_video_id,
-        playerVars: {
-          enablejsapi: 1,
-          rel: 0,
-          modestbranding: 1,
-          origin: window.location.origin,
-        },
-        events: {
-          onReady: (e: any) => {
-            const vidDuration = e.target.getDuration();
-            if (vidDuration > 0) setDuration(vidDuration);
-            const targetTime = usePlayerStore.getState().currentTime;
-            if (targetTime > 0) e.target.seekTo(targetTime, true);
-            if (usePlayerStore.getState().isPlaying) e.target.playVideo();
-          },
-          onStateChange: (e: any) => {
-            if (e.data === 1) setIsPlaying(true);
-            else if (e.data === 2) setIsPlaying(false);
-            else if (e.data === 0) {
-              setIsPlaying(false);
-              playNext();
-            }
-          },
-        },
-      });
-    };
+      // جلب الملاحظات
+      const { data: nData } = await supabase
+        .from('notes')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('episode_id', episode.id)
+        .order('timestamp_seconds', { ascending: true });
 
-    if (!window.YT) {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag?.parentNode?.insertBefore(tag, firstScriptTag);
-      window.onYouTubeIframeAPIReady = initPlayer;
-    } else {
-      initPlayer();
+      if (nData) setNotes(nData);
     }
 
-    return () => {
-      if (ytPlayerRef.current) {
-        try {
-          ytPlayerRef.current.destroy();
-        } catch {}
-      }
-    };
-  }, [episode?.id, episode?.youtube_video_id, setDuration, setIsPlaying, playNext]);
+    fetchUserData();
+  }, [user, episode]);
 
-  useEffect(() => {
-    let interval: any = null;
-    if (isPlaying) {
-      interval = setInterval(() => {
-        if (ytPlayerRef.current && typeof ytPlayerRef.current.getCurrentTime === 'function') {
-          const current = ytPlayerRef.current.getCurrentTime();
-          setCurrentTime(current);
-          const total = ytPlayerRef.current.getDuration();
-          if (total > 0 && total !== duration) setDuration(total);
-        }
-      }, 400);
+  const toggleBookmark = async () => {
+    if (!user) {
+      openAuthModal();
+      return;
     }
-    return () => clearInterval(interval);
-  }, [isPlaying, duration, setCurrentTime, setDuration]);
-
-  useEffect(() => {
-    const handlePlayCmd = () => ytPlayerRef.current?.playVideo?.();
-    const handlePauseCmd = () => ytPlayerRef.current?.pauseVideo?.();
-    const handleSeekCmd = (e: any) => {
-      const targetTime = e.detail;
-      if (ytPlayerRef.current?.seekTo && typeof targetTime === 'number') {
-        ytPlayerRef.current.seekTo(targetTime, true);
-        setCurrentTime(targetTime);
-      }
-    };
-
-    window.addEventListener('player-cmd-play', handlePlayCmd);
-    window.addEventListener('player-cmd-pause', handlePauseCmd);
-    window.addEventListener('player-cmd-seek', handleSeekCmd);
-
-    return () => {
-      window.removeEventListener('player-cmd-play', handlePlayCmd);
-      window.removeEventListener('player-cmd-pause', handlePauseCmd);
-      window.removeEventListener('player-cmd-seek', handleSeekCmd);
-    };
-  }, [setCurrentTime]);
-
-  const handleDynamicButtonClick = () => {
     if (!episode) return;
-    if (isPlaying) {
-      pauseEpisode();
+
+    if (isBookmarked) {
+      await supabase.from('bookmarks').delete().eq('user_id', user.id).eq('episode_id', episode.id);
+      setIsBookmarked(false);
     } else {
-      resumeEpisode();
+      await supabase.from('bookmarks').insert({ user_id: user.id, episode_id: episode.id });
+      setIsBookmarked(true);
     }
   };
 
-  const dynamicButtonLabel = useMemo(() => {
-    if (isPlaying) return 'إيقاف مؤقت';
-    if (hasStarted) return mode === 'audio' ? 'استئناف الاستماع' : 'استئناف الفيديو';
-    return mode === 'audio' ? 'بدء الاستماع' : 'تشغيل الفيديو';
-  }, [isPlaying, hasStarted, mode]);
+  const handleAddNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) {
+      openAuthModal();
+      return;
+    }
+    if (!newNoteContent.trim() || !episode) return;
 
-  const handleShare = () => {
-    if (typeof window !== 'undefined') {
-      navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+    setIsSavingNote(true);
+    const newNote = {
+      user_id: user.id,
+      episode_id: episode.id,
+      timestamp_seconds: noteTimestamp,
+      content: newNoteContent.trim(),
+    };
+
+    const { data, error } = await supabase.from('notes').insert(newNote).select().single();
+    if (!error && data) {
+      setNotes((prev) => [...prev, data].sort((a, b) => a.timestamp_seconds - b.timestamp_seconds));
+      setNewNoteContent('');
+    }
+    setIsSavingNote(false);
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    await supabase.from('notes').delete().eq('id', noteId);
+    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+  };
+
+  // تصدير كل الملاحظات كملف نصي مرتب
+  const exportNotesAsText = () => {
+    if (!episode || notes.length === 0) return;
+    const header = `فوائد وملاحظات حلقة: ${episode.title}\nالموسم ${episode.season} | بودكاست إيه المشكلة؟ وعالـمغرب\n----------------------------------------\n\n`;
+    const body = notes
+      .map((n, i) => `[${formatSeconds(n.timestamp_seconds)}] ${n.content}`)
+      .join('\n\n');
+
+    const blob = new Blob([header + body], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `فوائد-${episode.title.slice(0, 30)}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // تصدير كارت الفائدة كصورة مشاركة
+  const downloadCardImage = async () => {
+    if (!cardRef.current) return;
+    setIsGeneratingImage(true);
+    try {
+      const dataUrl = await toPng(cardRef.current, { quality: 0.95, pixelRatio: 2 });
+      const link = document.createElement('a');
+      link.download = `فائدة-ايه-المشكلة-${Date.now()}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('Failed to export image', err);
+    } finally {
+      setIsGeneratingImage(false);
+      setActiveCardNote(null);
     }
   };
 
-  if (loading && !episode) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-300"></div>
+      <div className="min-h-screen bg-[#07080b] flex items-center justify-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-400" />
       </div>
     );
   }
 
   if (!episode) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center gap-4">
-        <p className="text-zinc-400">عذراً، لم يتم العثور على هذه الحلقة.</p>
-        <button
-          onClick={() => router.push('/')}
-          className="px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-sm font-bold text-white hover:bg-zinc-800"
-        >
-          العودة للرئيسية
-        </button>
+      <div className="min-h-screen bg-[#07080b] flex flex-col items-center justify-center text-center px-4">
+        <h2 className="text-xl font-bold text-white mb-2">الحلقة غير موجودة</h2>
+        <button onClick={() => router.push('/')} className="text-xs font-bold text-amber-400">العودة للرئيسية</button>
       </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col pb-36">
-      <Navbar />
+    <main className="min-h-screen bg-[#07080b] text-zinc-100 flex flex-col pb-36 selection:bg-amber-400 selection:text-zinc-950">
+      {!focusMode && <Navbar />}
 
-      <div className="container mx-auto max-w-6xl px-4 sm:px-6 pt-6">
-        <div className="flex items-center justify-between mb-6">
+      {/* عنصر توليد كارت الفائدة المخفي/المجهز للتحميل */}
+      {activeCardNote && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="flex flex-col items-center gap-4 max-w-sm w-full">
+            <div
+              ref={cardRef}
+              className="w-full aspect-square bg-[#0b0c10] border border-amber-500/30 rounded-3xl p-6 flex flex-col justify-between text-right relative overflow-hidden shadow-2xl"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-amber-400 tracking-wider">إيه المشكلة؟ وعالـمغرب</span>
+                <span className="text-[10px] text-zinc-500 font-mono">[{formatSeconds(activeCardNote.timestamp_seconds)}]</span>
+              </div>
+
+              <p className="text-sm sm:text-base font-bold text-white leading-relaxed my-auto">
+                «{activeCardNote.content}»
+              </p>
+
+              <div className="pt-4 border-t border-white/10 flex items-center justify-between">
+                <span className="text-[10px] text-zinc-400 truncate max-w-[200px]">{episode.title}</span>
+                <span className="text-[10px] font-black text-amber-400">ehelmoshkla.app</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full">
+              <button
+                onClick={downloadCardImage}
+                disabled={isGeneratingImage}
+                className="flex-1 py-2.5 rounded-xl bg-amber-400 text-zinc-950 font-black text-xs flex items-center justify-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                <span>{isGeneratingImage ? 'جاري التحميل...' : 'حفظ الصورة'}</span>
+              </button>
+              <button
+                onClick={() => setActiveCardNote(null)}
+                className="px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 font-bold text-xs"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* الرأس ومحتوى الحلقة */}
+      <div className={`mx-auto w-full ${focusMode ? 'max-w-5xl pt-6' : 'max-w-7xl pt-24'} px-4 sm:px-8 transition-all`}>
+        {/* أزرار الرجوع ووضع التركيز */}
+        <div className="flex items-center justify-between mb-4">
           <button
-            onClick={() => router.push('/#series')}
-            className="inline-flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors group"
+            onClick={() => router.push('/')}
+            className="inline-flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors"
           >
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            <span>العودة لجميع الحلقات</span>
+            <ArrowRight className="w-4 h-4" />
+            <span>العودة لكل الحلقات</span>
           </button>
 
-          <div className="flex items-center bg-zinc-900 border border-zinc-800 p-1 rounded-xl shadow-inner">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setMode('video')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                mode === 'video'
-                  ? 'bg-zinc-100 text-zinc-950 shadow-sm'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
+              onClick={() => setFocusMode(!focusMode)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-700/80 text-xs font-bold text-zinc-300 hover:text-white transition-colors"
             >
-              <Video className="w-3.5 h-3.5" />
-              <span>فيديو</span>
+              {focusMode ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
+              <span>{focusMode ? 'إلغاء التركيز' : 'وضع التركيز'}</span>
             </button>
 
             <button
-              onClick={() => setMode('audio')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                mode === 'audio'
-                  ? 'bg-zinc-100 text-zinc-950 shadow-sm'
-                  : 'text-zinc-400 hover:text-white'
+              onClick={toggleBookmark}
+              className={`p-2 rounded-full border transition-colors ${
+                isBookmarked
+                  ? 'bg-amber-400 text-zinc-950 border-amber-400'
+                  : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:text-white'
               }`}
+              title="حفظ الحلقة"
             >
-              <Headphones className="w-3.5 h-3.5" />
-              <span>صوت فقط (التركيز)</span>
+              <Bookmark className="w-4 h-4 fill-current" />
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          <div className="lg:col-span-8 flex flex-col gap-6">
-            
-            <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-2xl">
-              <div className={`w-full h-full ${mode === 'audio' ? 'opacity-0 pointer-events-none absolute inset-0' : 'block'}`}>
-                <div id="yt-embed-player" className="w-full h-full" />
+        {/* عرض الفيديو الرئيسي */}
+        <div className="relative aspect-video w-full rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl bg-black mb-6">
+          <iframe
+            src={`https://www.youtube-nocookie.com/embed/${episode.youtube_video_id}?autoplay=1&rel=0`}
+            title={episode.title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            className="w-full h-full"
+          />
+        </div>
+
+        {/* تفاصيل الحلقة وتدوين الفوائد جنبًا إلى جنب */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* الجانب الأيمن: عنوان الحلقة ووصفها */}
+          <div className="lg:col-span-2 flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <div className="inline-flex items-center gap-2 text-[11px] font-bold text-amber-400">
+                <span>{episode.program === 'ala-el-maghreb' ? 'عالـمغرب' : 'إيه المشكلة؟'}</span>
+                <span>•</span>
+                <span>الموسم {episode.season}</span>
+                {episode.topic && (
+                  <>
+                    <span>•</span>
+                    <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">{episode.topic}</span>
+                  </>
+                )}
               </div>
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-white leading-snug">
+                {episode.title}
+              </h1>
+            </div>
 
-              {mode === 'audio' && (
-                <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-center p-6 text-center overflow-hidden bg-gradient-to-b from-zinc-900 via-zinc-950 to-zinc-950">
-                  <img
-                    src={episode.thumbnail_url}
-                    alt={episode.title}
-                    className="absolute inset-0 w-full h-full object-cover opacity-20 blur-md pointer-events-none"
-                  />
-                  <div className="relative z-10 flex flex-col items-center gap-4">
-                    <div className="relative">
-                      <div className="h-24 w-24 sm:h-28 sm:w-28 rounded-2xl overflow-hidden shadow-2xl border-2 border-zinc-700/80">
-                        <img
-                          src={episode.thumbnail_url}
-                          alt={episode.title}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      {isPlaying && (
-                        <span className="absolute -top-1 -right-1 flex h-4 w-4">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-4 w-4 bg-amber-500"></span>
-                        </span>
-                      )}
-                    </div>
+            {episode.description && (
+              <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-4">
+                {episode.description}
+              </p>
+            )}
+          </div>
 
-                    <div className="flex flex-col items-center gap-1">
-                      <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
-                        <Sparkles className="w-3.5 h-3.5" />
-                        وضع الاستماع الصوتي والتركيز
-                      </span>
-                      <p className="text-xs text-zinc-400 max-w-sm">
-                        يعمل الصوت بسلاسة في الخلفية لتقليل التشتت البصري وتسهيل كتابة الملاحظات.
-                      </p>
-                    </div>
-                  </div>
-                </div>
+          {/* الجانب الأيسر: صندوق الفوائد والتدوين */}
+          <div className="flex flex-col gap-4 bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-4 sm:p-5 backdrop-blur-md">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-800/80">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-amber-400" />
+                <h3 className="text-xs font-black text-white">فوائد وملاحظات الحلقة</h3>
+              </div>
+              {notes.length > 0 && (
+                <button
+                  onClick={exportNotesAsText}
+                  title="تصدير الملاحظات لملف نصي"
+                  className="flex items-center gap-1 text-[11px] font-bold text-zinc-400 hover:text-white transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>تصدير</span>
+                </button>
               )}
             </div>
 
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-slate-300 font-bold">
-                  {episode.program === 'ala-el-maghreb' ? <Moon className="w-3 h-3 text-amber-400" /> : <Radio className="w-3 h-3 text-slate-300" />}
-                  {episode.program === 'ala-el-maghreb' ? `عالـمغرب • الموسم ${episode.season}` : `إيه المشكلة • الموسم ${episode.season}`}
-                </span>
-                <span className="px-2.5 py-1 rounded-full bg-zinc-900/60 text-zinc-400 border border-zinc-800/80">
-                  الحلقة {episode.episode_number}
-                </span>
-                <span className="px-2.5 py-1 rounded-full bg-zinc-900/60 text-zinc-400 border border-zinc-800/80">
-                  {episode.topic}
-                </span>
+            {/* نموذج كتابة فائدة جديدة */}
+            <form onSubmit={handleAddNote} className="flex flex-col gap-2">
+              <textarea
+                value={newNoteContent}
+                onChange={(e) => setNewNoteContent(e.target.value)}
+                placeholder="اكتب خاطرة أو فائدة استوقفتك..."
+                rows={3}
+                className="w-full bg-zinc-950/80 border border-zinc-800 rounded-xl p-2.5 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-400 resize-none"
+              />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-mono">
+                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  <span>التوقيت:</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={noteTimestamp}
+                    onChange={(e) => setNoteTimestamp(Number(e.target.value))}
+                    className="w-14 bg-zinc-950 border border-zinc-800 rounded px-1 text-center text-white"
+                  />
+                  <span>ث</span>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSavingNote || !newNoteContent.trim()}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-black transition-all disabled:opacity-50"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>حفظ الفائدة</span>
+                </button>
               </div>
+            </form>
 
-              <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-white leading-tight">
-                {episode.title}
-              </h1>
-
-              <div className="flex items-center gap-4 text-xs text-zinc-400 font-medium">
-                <span className="flex items-center gap-1.5 font-mono bg-zinc-900/80 border border-zinc-800/80 px-2.5 py-1 rounded-lg">
-                  <Clock className="w-3.5 h-3.5 text-slate-300" />
-                  <span className="text-white font-bold">{formatTime(currentTime)}</span>
-                  <span className="text-zinc-500">/</span>
-                  <span>{formatTime(duration || episode.duration_seconds)}</span>
-                </span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3 pt-2">
-                <button
-                  onClick={handleDynamicButtonClick}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-extrabold text-xs sm:text-sm shadow-md transition-all hover:scale-105 active:scale-95"
-                >
-                  {isPlaying ? <Pause className="w-4 h-4 fill-zinc-950" /> : <Play className="w-4 h-4 fill-zinc-950" />}
-                  <span>{dynamicButtonLabel}</span>
-                </button>
-
-                <button
-                  onClick={() => setMode(mode === 'video' ? 'audio' : 'video')}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold transition-colors"
-                >
-                  {mode === 'video' ? <Headphones className="w-4 h-4 text-slate-300" /> : <Video className="w-4 h-4 text-slate-300" />}
-                  <span>{mode === 'video' ? 'تحويل لوضع الصوت فقط' : 'تحويل لوضع الفيديو'}</span>
-                </button>
-
-                {/* زر الحفظ في المفضلة */}
-                <button
-                  onClick={() => toggleBookmark(episode.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold transition-all ${
-                    bookmarked
-                      ? 'bg-amber-400 text-zinc-950 border-amber-300 shadow-md'
-                      : 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800 text-zinc-300 hover:text-white'
-                  }`}
-                >
-                  <Bookmark className={`w-3.5 h-3.5 ${bookmarked ? 'fill-current' : ''}`} />
-                  <span>{bookmarked ? 'محفوظة في المفضلة' : 'حفظ في المفضلة'}</span>
-                </button>
-
-                <button
-                  onClick={handleShare}
-                  className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold transition-colors"
-                >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
-                  <span>{copied ? 'تم النسخ' : 'مشاركة'}</span>
-                </button>
-
-                <a
-                  href={`https://www.youtube.com/watch?v=${episode.youtube_video_id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-red-400 text-xs font-semibold transition-colors mr-auto"
-                >
-                  <YoutubeIcon className="w-3.5 h-3.5 text-red-500" />
-                  <span className="hidden sm:inline">يوتيوب</span>
-                </a>
-              </div>
-            </div>
-
-            <EpisodeNotes episodeId={episode.id} episodeTitle={episode.title} />
-
-          </div>
-
-          <div className="lg:col-span-4 flex flex-col gap-6">
-            <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-5 flex flex-col gap-3">
-              <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-slate-300" />
-                عن {episode.program === 'ala-el-maghreb' ? 'عالـمغرب' : 'بودكاست إيه المشكلة'}
-              </h4>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                مساحة حوارية وتأملية مع د. أمير منير، د. ياسر ممدوح، ود. محمد الغليظ لمناقشة تحديات وقضايا الشباب المعاصرة من منظور شرعي وواقعي مبسط.
-              </p>
-            </div>
-
-            <div className="bg-zinc-900/30 border border-zinc-800/60 rounded-2xl p-5 flex flex-col gap-2.5">
-              <h5 className="text-xs font-bold text-zinc-300">💡 ميزة تدوين الملاحظات</h5>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                اضغط على «حفظ الملاحظة» أثناء استماعك لأي فكرة مميزة لحفظها مع توقيتها التلقائي، والعودة إليها بنقرة واحدة لاحقاً.
-              </p>
+            {/* قائمة الفوائد المدونة */}
+            <div className="flex flex-col gap-2.5 max-h-[340px] overflow-y-auto pr-1">
+              {notes.length === 0 ? (
+                <div className="py-8 text-center text-zinc-500 text-xs">
+                  لم تدوّن أي فائدة لهذه الحلقة بعد.
+                </div>
+              ) : (
+                notes.map((note) => (
+                  <div
+                    key={note.id}
+                    className="flex flex-col gap-1.5 p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/80 text-right group"
+                  >
+                    <div className="flex items-center justify-between text-[10px] text-zinc-500">
+                      <span className="font-mono text-amber-400/90 font-bold">
+                        [{formatSeconds(note.timestamp_seconds)}]
+                      </span>
+                      <div className="flex items-center gap-1 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => setActiveCardNote(note)}
+                          title="تحويل لصورة ومشاركتها"
+                          className="p-1 hover:text-amber-400 transition-colors"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteNote(note.id)}
+                          title="حذف"
+                          className="p-1 hover:text-red-400 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-zinc-200 leading-relaxed font-normal">
+                      {note.content}
+                    </p>
+                  </div>
+                ))
+              )}
             </div>
           </div>
-
         </div>
       </div>
 
