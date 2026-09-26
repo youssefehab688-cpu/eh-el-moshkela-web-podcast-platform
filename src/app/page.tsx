@@ -11,14 +11,31 @@ import { DAILY_QUOTES, QuoteItem } from '@/data/quotes';
 import { 
   Search, X, Radio, Moon, 
   Layers, CheckCircle2, RotateCcw, Play, Headphones, 
-  Sparkles, ArrowDown, Folder, Clock, History, Compass, Quote, Copy, Check
+  Sparkles, ArrowDown, Clock, History, Compass, Quote, Copy, Check
 } from 'lucide-react';
 
 const CURATED_PATHS = [
-  { id: 'path-faith', title: 'مسار التوبة وترويض النفس', query: 'توبة', icon: '🌱' },
-  { id: 'path-marriage', title: 'مسار العلاقات واختيار الشريك', query: 'زواج', icon: '💍' },
-  { id: 'path-prayer', title: 'مسار الخشوع والراحة في الصلاة', query: 'صلاة', icon: '🕌' },
+  { id: 'path-faith', title: 'مسار التوبة وترويض النفس', icon: '🌱' },
+  { id: 'path-marriage', title: 'مسار العلاقات واختيار الشريك', icon: '💍' },
+  { id: 'path-prayer', title: 'مسار الخشوع والراحة في الصلاة', icon: '🕌' },
 ];
+
+const TRACK_KEYWORDS: Record<string, string[]> = {
+  'path-faith': [
+    'توبة', 'توبه', 'تائب', 'ذنب', 'ذنوب', 'معصية', 'معاصي', 'معصيه',
+    'انتكاس', 'انتكاسة', 'انتكاسه', 'شهوة', 'شهوات', 'شهوه', 'ترويض',
+    'نفس', 'هوى', 'استغفار', 'هداية', 'هدايه', 'تغيير', 'قلب'
+  ],
+  'path-marriage': [
+    'زواج', 'جواز', 'شريك', 'علاقة', 'علاقات', 'علاقه', 'خطوبة', 'خطوبه',
+    'حب', 'ارتباط', 'انفصال', 'طلاق', 'اختيار', 'اهل', 'صحاب', 'صداقة',
+    'صداقه', 'بنات', 'مشاعر', 'تفاهم', 'بيوت', 'بيت'
+  ],
+  'path-prayer': [
+    'صلاة', 'صلاه', 'بصلي', 'بصليش', 'اصلي', 'خشوع', 'فجر', 'قيام',
+    'ركوع', 'سجود', 'مسجد', 'وضوء', 'تارك'
+  ],
+};
 
 function normalizeArabic(text: string): string {
   return (text || '')
@@ -44,8 +61,9 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProgram, setSelectedProgram] = useState<'all' | 'eh-el-moshkla' | 'ala-el-maghreb'>('all');
   const [selectedSeason, setSelectedSeason] = useState<number | 'all'>('all');
-  const [copiedQuote, setCopiedQuote] = useState(false);
+  const [activeTrack, setActiveTrack] = useState<string | null>(null);
 
+  const [copiedQuote, setCopiedQuote] = useState(false);
   const [todayQuote, setTodayQuote] = useState<QuoteItem>(DAILY_QUOTES[0]);
 
   const [lastPlayed, setLastPlayed] = useState<{
@@ -56,19 +74,32 @@ export default function HomePage() {
 
   const { setPlaylist, playEpisode } = usePlayerStore();
 
-  useEffect(() => {
-    const day = new Date().getDate();
-    setTodayQuote(DAILY_QUOTES[day % DAILY_QUOTES.length]);
-
+  // تحديث حالة آخر حلقة تم الاستماع إليها فورياً
+  const refreshLastPlayed = () => {
     try {
       const saved = localStorage.getItem('eh_el_moshkla_last_played');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed?.episode && parsed?.currentTime > 5) {
+        if (parsed?.episode && parsed?.currentTime > 2) {
           setLastPlayed(parsed);
+          return;
         }
       }
-    } catch (e) {}
+      setLastPlayed(null);
+    } catch (e) {
+      setLastPlayed(null);
+    }
+  };
+
+  useEffect(() => {
+    const day = new Date().getDate();
+    setTodayQuote(DAILY_QUOTES[day % DAILY_QUOTES.length]);
+
+    refreshLastPlayed();
+
+    // الاستماع للتحديثات اللحظية لظهور شريط استئناف الاستماع فوراً عند إغلاق المشغل
+    window.addEventListener('app_storage_updated', refreshLastPlayed);
+    window.addEventListener('storage', refreshLastPlayed);
 
     async function fetchEpisodes() {
       try {
@@ -98,8 +129,28 @@ export default function HomePage() {
         setLoading(false);
       }
     }
+
     fetchEpisodes();
+
+    return () => {
+      window.removeEventListener('app_storage_updated', refreshLastPlayed);
+      window.removeEventListener('storage', refreshLastPlayed);
+    };
   }, [setPlaylist]);
+
+  // استخراج أحدث حلقة نازلة فعلياً (أعلى موسم وأعلى رقم حلقة في إيه المشكلة)
+  const latestEpisode = useMemo(() => {
+    if (!episodes.length) return null;
+    const ehEpisodes = episodes.filter((ep) => ep.program === 'eh-el-moshkla');
+    const pool = ehEpisodes.length > 0 ? ehEpisodes : episodes;
+    
+    return [...pool].sort((a, b) => {
+      if (Number(b.season) !== Number(a.season)) {
+        return Number(b.season) - Number(a.season);
+      }
+      return Number(b.episode_number) - Number(a.episode_number);
+    })[0];
+  }, [episodes]);
 
   const handleCopyQuote = () => {
     const textToCopy = `«${todayQuote.quote}»\n— ${todayQuote.author} (بودكاست إيه المشكلة وعالـمغرب)`;
@@ -108,11 +159,9 @@ export default function HomePage() {
     setTimeout(() => setCopiedQuote(false), 2000);
   };
 
-  const availableSeasons = useMemo(() => {
-    if (selectedProgram === 'eh-el-moshkla') return [1, 2, 3, 4, 5, 6];
-    if (selectedProgram === 'ala-el-maghreb') return [1, 2, 3];
-    return [1, 2, 3, 4, 5, 6];
-  }, [selectedProgram]);
+  const handleToggleTrack = (trackId: string) => {
+    setActiveTrack((prev) => (prev === trackId ? null : trackId));
+  };
 
   const filteredEpisodes = useMemo(() => {
     const normSearch = normalizeArabic(searchQuery);
@@ -120,6 +169,13 @@ export default function HomePage() {
     return episodes.filter((ep) => {
       if (selectedProgram !== 'all' && ep.program !== selectedProgram) return false;
       if (selectedSeason !== 'all' && Number(ep.season) !== Number(selectedSeason)) return false;
+
+      if (activeTrack && TRACK_KEYWORDS[activeTrack]) {
+        const combined = normalizeArabic(`${ep.title} ${ep.description || ''} ${ep.topic || ''}`);
+        const keywords = TRACK_KEYWORDS[activeTrack].map(normalizeArabic);
+        const matchesTrack = keywords.some((kw) => combined.includes(kw));
+        if (!matchesTrack) return false;
+      }
 
       if (normSearch) {
         const titleNorm = normalizeArabic(ep.title);
@@ -136,12 +192,13 @@ export default function HomePage() {
 
       return true;
     });
-  }, [episodes, searchQuery, selectedProgram, selectedSeason]);
+  }, [episodes, searchQuery, selectedProgram, selectedSeason, activeTrack]);
 
   const handleResetFilters = () => {
     setSearchQuery('');
     setSelectedProgram('all');
     setSelectedSeason('all');
+    setActiveTrack(null);
   };
 
   const resumePlayback = () => {
@@ -150,18 +207,17 @@ export default function HomePage() {
         ...lastPlayed.episode,
         initialSeekTime: lastPlayed.currentTime,
       };
-      playEpisode(epWithSeek, 'audio');
+      playEpisode(epWithSeek, 'video');
     }
   };
 
-  const isFiltered = searchQuery !== '' || selectedProgram !== 'all' || selectedSeason !== 'all';
-  const latestEpisode = episodes.length > 0 ? episodes[0] : null;
+  const isFiltered = searchQuery !== '' || selectedProgram !== 'all' || selectedSeason !== 'all' || activeTrack !== null;
 
   return (
     <main className="min-h-screen bg-[#07080b] text-zinc-100 flex flex-col pb-36 selection:bg-amber-400 selection:text-zinc-950">
       <Navbar />
 
-      {/* الهيرو السينمائي */}
+      {/* الهيرو السينمائي الأصلي: تعتيم جهة النصوص يميناً وإضاءة ساطعة لملامح الاستوديو يساراً */}
       <section className="relative w-full min-h-[75vh] sm:min-h-[82vh] flex items-center justify-start overflow-hidden border-b border-zinc-800/80 pt-24 pb-14 px-5 sm:px-12 lg:px-20">
         <div className="absolute inset-0 z-0">
           <img
@@ -172,7 +228,7 @@ export default function HomePage() {
                 (e.target as HTMLImageElement).src = `https://img.youtube.com/vi/${latestEpisode.youtube_video_id}/maxresdefault.jpg`;
               }
             }}
-            className="h-full w-full object-cover object-center filter brightness-[0.8] contrast-[1.08] transition-transform duration-1000"
+            className="h-full w-full object-cover object-center filter brightness-[0.82] contrast-[1.08] transition-transform duration-1000"
           />
 
           <div className="absolute inset-0 bg-gradient-to-t from-[#07080b] via-[#07080b]/50 to-black/30" />
@@ -193,7 +249,7 @@ export default function HomePage() {
           </h1>
 
           <p className="text-xs sm:text-sm text-zinc-300 max-w-xl leading-relaxed font-normal drop-shadow">
-            د. محمد الغليظ، د. أمير منير، ود. ياسر ممدوح يطرحون أسئلة الشباب الملحة في الدين، العلاقات، وتحديات الحياة المعاصرة برؤية عملية هادئة.
+            د. محمد الغليظ، د. أمير منير، وم. ياسر ممدوح يطرحون أسئلة الشباب الملحة في الدين، العلاقات، وتحديات الحياة المعاصرة برؤية عملية هادئة.
           </p>
 
           <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -203,7 +259,7 @@ export default function HomePage() {
                 className="flex items-center gap-2 px-6 py-2.5 sm:py-3 rounded-full bg-white hover:bg-zinc-200 text-zinc-950 font-black text-xs sm:text-sm transition-all shadow-xl active:scale-95"
               >
                 <Play className="w-4 h-4 fill-current" />
-                <span>استمع لأحدث حلقة</span>
+                  <span>استمع لأحدث حلقة</span>
               </button>
             )}
 
@@ -234,9 +290,9 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* استئناف الاستماع */}
+      {/* استئناف الاستماع (يظهر لحظياً فور إغلاق أو مغادرة المشغل) */}
       {lastPlayed && (
-        <section className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 -mt-6 sm:-mt-8 relative z-20">
+        <section className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 -mt-6 sm:-mt-8 relative z-20 animate-card-fade">
           <div className="rounded-3xl border border-amber-500/30 bg-zinc-900/90 backdrop-blur-2xl p-4 sm:p-5 shadow-2xl shadow-amber-950/20 flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4 w-full md:w-auto">
               <div className="relative h-14 w-24 sm:h-16 sm:w-28 rounded-2xl overflow-hidden flex-shrink-0 border border-white/10">
@@ -277,6 +333,7 @@ export default function HomePage() {
                 onClick={() => {
                   localStorage.removeItem('eh_el_moshkla_last_played');
                   setLastPlayed(null);
+                  window.dispatchEvent(new Event('app_storage_updated'));
                 }}
                 className="p-2 text-zinc-500 hover:text-zinc-300 transition-colors"
                 title="إخفاء"
@@ -318,31 +375,60 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* المسارات الموجهة */}
+      {/* المسارات الموجهة الذكية */}
       <section className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 pt-6">
-        <div className="flex items-center gap-2 pb-3">
-          <Compass className="w-4 h-4 text-amber-400" />
-          <h3 className="text-xs font-black text-white uppercase tracking-wider">مسارات استماع موجهة لمشكلات محددة:</h3>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {CURATED_PATHS.map((path) => (
+        <div className="flex items-center justify-between pb-3">
+          <div className="flex items-center gap-2">
+            <Compass className="w-4 h-4 text-amber-400" />
+            <h3 className="text-xs font-black text-white uppercase tracking-wider">
+              مسارات استماع موجهة لمشكلات محددة:
+            </h3>
+          </div>
+          {activeTrack && (
             <button
-              key={path.id}
-              onClick={() => setSearchQuery(path.query)}
-              className="flex items-center gap-3 p-3.5 rounded-2xl bg-zinc-900/40 hover:bg-zinc-800/60 border border-zinc-800/80 hover:border-amber-400/40 transition-all text-right group"
+              onClick={() => setActiveTrack(null)}
+              className="text-[11px] font-bold text-amber-400 hover:underline"
             >
-              <span className="text-2xl p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 flex-shrink-0">{path.icon}</span>
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-white group-hover:text-amber-400 transition-colors">{path.title}</span>
-                <span className="text-[10px] text-zinc-400 mt-0.5">اضغط لعرض حلقات المسار</span>
-              </div>
+              إلغاء تصفية المسار ✕
             </button>
-          ))}
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {CURATED_PATHS.map((path) => {
+            const isActive = activeTrack === path.id;
+            return (
+              <button
+                key={path.id}
+                onClick={() => handleToggleTrack(path.id)}
+                className={`flex items-center gap-3 p-3.5 rounded-2xl border transition-all text-right group active:scale-95 ${
+                  isActive
+                    ? 'bg-amber-400/15 border-amber-400 text-white shadow-lg ring-1 ring-amber-400/50'
+                    : 'bg-zinc-900/40 hover:bg-zinc-800/60 border-zinc-800/80 hover:border-amber-400/40'
+                }`}
+              >
+                <span className={`text-2xl p-2 rounded-xl border flex-shrink-0 transition-colors ${
+                  isActive ? 'bg-amber-400/20 border-amber-400/40' : 'bg-zinc-950/60 border-zinc-800'
+                }`}>
+                  {path.icon}
+                </span>
+                <div className="flex flex-col">
+                  <span className={`text-xs font-bold transition-colors ${isActive ? 'text-amber-400 font-black' : 'text-white group-hover:text-amber-400'}`}>
+                    {path.title}
+                  </span>
+                  <span className="text-[10px] text-zinc-400 mt-0.5">
+                    {isActive ? '✓ المسار مفعّل الآن (اضغط للإلغاء)' : 'اضغط لعرض كل حلقات المسار'}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </section>
 
-      {/* الفهرسة والبحث وشبكة الحلقات بدون فلتر الموضوعات */}
+      {/* الفهرسة والبحث وشبكة الحلقات */}
       <section id="series" className="mx-auto w-full max-w-[1720px] px-4 sm:px-8 lg:px-12 pt-8 flex flex-col gap-6">
+        
         <div className="w-full max-w-2xl mx-auto">
           <div className="relative flex items-center group">
             <input
@@ -365,77 +451,118 @@ export default function HomePage() {
         </div>
 
         <div className="flex flex-col gap-3.5 bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-4 sm:p-5 backdrop-blur-sm shadow-xl">
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-800/60">
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-zinc-800/60">
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-bold text-zinc-300">البرنامج:</span>
+              <span className="text-xs font-bold text-zinc-300">تصفح البرامج والمواسم:</span>
             </div>
 
-            <div className="flex items-center gap-1.5 bg-zinc-950/80 p-1 rounded-xl border border-zinc-800/80">
-              <button
-                onClick={() => { setSelectedProgram('all'); setSelectedSeason('all'); }}
-                className={`px-3.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                  selectedProgram === 'all'
-                    ? 'bg-zinc-100 text-zinc-950 shadow'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                جميع الحلقات ({episodes.length})
-              </button>
-
-              <button
-                onClick={() => { setSelectedProgram('eh-el-moshkla'); setSelectedSeason('all'); }}
-                className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  selectedProgram === 'eh-el-moshkla'
-                    ? 'bg-zinc-100 text-zinc-950 shadow'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <Radio className="w-3.5 h-3.5" />
-                <span>إيه المشكلة</span>
-              </button>
-
-              <button
-                onClick={() => { setSelectedProgram('ala-el-maghreb'); setSelectedSeason('all'); }}
-                className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                  selectedProgram === 'ala-el-maghreb'
-                    ? 'bg-amber-400 text-zinc-950 shadow font-black'
-                    : 'text-zinc-400 hover:text-amber-400'
-                }`}
-              >
-                <Moon className="w-3.5 h-3.5" />
-                <span>عالـمغرب</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-zinc-400 ml-1">الموسم:</span>
             <button
-              onClick={() => setSelectedSeason('all')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border ${
-                selectedSeason === 'all'
-                  ? 'bg-white text-zinc-950 border-white'
-                  : 'bg-zinc-950/60 text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-700'
+              onClick={() => { setSelectedProgram('all'); setSelectedSeason('all'); }}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                selectedProgram === 'all' && selectedSeason === 'all'
+                  ? 'bg-white text-zinc-950 font-black shadow'
+                  : 'bg-zinc-950/80 text-zinc-400 hover:text-white border border-zinc-800'
               }`}
             >
-              كل المواسم
+              جميع حلقات البرنامجين ({episodes.length})
             </button>
+          </div>
 
-            {availableSeasons.map((s) => (
+          {/* الصف الأول: بودكاست إيه المشكلة؟ */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400 min-w-[130px]">
+              <Radio className="w-3.5 h-3.5" />
+              <span>إيه المشكلة؟:</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
-                key={s}
-                onClick={() => setSelectedSeason(s)}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border ${
-                  selectedSeason === s
-                    ? 'bg-white text-zinc-950 border-white'
+                onClick={() => {
+                  setSelectedProgram('eh-el-moshkla');
+                  setSelectedSeason('all');
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                  selectedProgram === 'eh-el-moshkla' && selectedSeason === 'all'
+                    ? 'bg-amber-400 text-zinc-950 border-amber-400 font-black shadow-md'
                     : 'bg-zinc-950/60 text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-700'
                 }`}
               >
-                {selectedProgram === 'ala-el-maghreb' ? `عالـمغرب ${s}` : `الموسم ${s}`}
+                كل مواسم البرنامج
               </button>
-            ))}
+
+              {[1, 2, 3, 4, 5, 6].map((s) => (
+                <button
+                  key={`eh-${s}`}
+                  onClick={() => {
+                    if (selectedProgram === 'eh-el-moshkla' && selectedSeason === s) {
+                      setSelectedProgram('all');
+                      setSelectedSeason('all');
+                    } else {
+                      setSelectedProgram('eh-el-moshkla');
+                      setSelectedSeason(s);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition-all border ${
+                    selectedProgram === 'eh-el-moshkla' && selectedSeason === s
+                      ? 'bg-amber-400 text-zinc-950 border-amber-400 font-black shadow-md'
+                      : 'bg-zinc-950/60 text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-700'
+                  }`}
+                >
+                  الموسم {s}
+                </button>
+              ))}
+            </div>
           </div>
+
+          <div className="h-px bg-zinc-800/60 w-full" />
+
+          {/* الصف الثاني: برنامج عالـمغرب */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-sky-400 min-w-[130px]">
+              <Moon className="w-3.5 h-3.5" />
+              <span>عالـمغرب:</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                onClick={() => {
+                  setSelectedProgram('ala-el-maghreb');
+                  setSelectedSeason('all');
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                  selectedProgram === 'ala-el-maghreb' && selectedSeason === 'all'
+                    ? 'bg-sky-400 text-zinc-950 border-sky-400 font-black shadow-md'
+                    : 'bg-zinc-950/60 text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-700'
+                }`}
+              >
+                كل مواسم عالـمغرب
+              </button>
+
+              {[1, 2, 3].map((s) => (
+                <button
+                  key={`maghreb-${s}`}
+                  onClick={() => {
+                    if (selectedProgram === 'ala-el-maghreb' && selectedSeason === s) {
+                      setSelectedProgram('all');
+                      setSelectedSeason('all');
+                    } else {
+                      setSelectedProgram('ala-el-maghreb');
+                      setSelectedSeason(s);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition-all border ${
+                    selectedProgram === 'ala-el-maghreb' && selectedSeason === s
+                      ? 'bg-sky-400 text-zinc-950 border-sky-400 font-black shadow-md'
+                      : 'bg-zinc-950/60 text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-700'
+                  }`}
+                >
+                  الموسم {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
         </div>
 
         <div className="flex items-center justify-between text-xs text-zinc-400 px-1">
@@ -471,7 +598,7 @@ export default function HomePage() {
             <Search className="w-10 h-10 text-zinc-600" />
             <h3 className="text-base font-bold text-white">لم يتم العثور على أي حلقة</h3>
             <p className="text-xs text-zinc-400 max-w-md">
-              جرّب إعادة تعيين الفلاتر أو كتابة كلمة بحث أخرى.
+              جرّب الضغط على زر "إعادة تعيين الفلاتر" أعلاه أو كتابة كلمة بحث أخرى.
             </p>
           </div>
         )}

@@ -1,0 +1,26 @@
+{
+  "name": "بودكاست إيه المشكلة؟ وعالـمغرب",
+  "short_name": "إيه المشكلة",
+  "description": "منصة الاستماع التفاعلي وتدوين الفوائد والملاحظات لبودكاست إيه المشكلة؟ وعالـمغرب",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07080b",
+  "theme_color": "#07080b",
+  "orientation": "portrait-primary",
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

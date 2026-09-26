@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Episode } from '@/types';
 import { usePlayerStore } from '@/store/usePlayerStore';
-import { Play, Headphones, Clock, Check } from 'lucide-react';
+import { Play, Headphones, Clock, Check, Bookmark, BookmarkCheck } from 'lucide-react';
 
 interface EpisodeCardProps {
   episode: Episode;
@@ -23,7 +23,7 @@ function formatDuration(seconds?: number): string {
   if (!seconds) return '';
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
+  const s = Math.floor(seconds % 60);
   if (h > 0) {
     return `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
   }
@@ -36,16 +36,27 @@ export default function EpisodeCard({ episode, index = 0 }: EpisodeCardProps) {
 
   const [attempt, setAttempt] = useState<number>(0);
   const [isWatched, setIsWatched] = useState(false);
+  const [isBookmarked, setIsBookmarked] = useState(false);
   const [progressPercent, setProgressPercent] = useState<number>(0);
 
   const isCurrent = currentEpisode?.id === episode.id || currentEpisode?.youtube_video_id === cleanId;
 
+  // فحص المشاهدة، والحفظ، وشريط الإنجاز
   useEffect(() => {
     setAttempt(0);
     try {
+      // 1. فحص المشاهدة
       const watchedList = JSON.parse(localStorage.getItem('eh_el_moshkla_watched') || '[]');
       setIsWatched(watchedList.includes(episode.id));
 
+      // 2. فحص المحفوظات
+      const bMarks: any[] = JSON.parse(localStorage.getItem('eh_el_moshkla_bookmarks') || '[]');
+      const exists = bMarks.some((b: any) =>
+        typeof b === 'string' ? b === episode.id : b?.id === episode.id
+      );
+      setIsBookmarked(exists);
+
+      // 3. فحص تقدم التشغيل
       const last = localStorage.getItem('eh_el_moshkla_last_played');
       if (last) {
         const parsed = JSON.parse(last);
@@ -55,8 +66,20 @@ export default function EpisodeCard({ episode, index = 0 }: EpisodeCardProps) {
         }
       }
     } catch (e) {}
+
+    // الاستماع لأي تحديث لحظي للمحفوظات من باقي التطبيق
+    const handleStorageChange = () => {
+      try {
+        const bMarks: any[] = JSON.parse(localStorage.getItem('eh_el_moshkla_bookmarks') || '[]');
+        setIsBookmarked(bMarks.some((b: any) => typeof b === 'string' ? b === episode.id : b?.id === episode.id));
+      } catch (e) {}
+    };
+
+    window.addEventListener('app_storage_updated', handleStorageChange);
+    return () => window.removeEventListener('app_storage_updated', handleStorageChange);
   }, [cleanId, episode.id]);
 
+  // تبديل المشاهدة (علامة الصح)
   const toggleWatched = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -71,6 +94,25 @@ export default function EpisodeCard({ episode, index = 0 }: EpisodeCardProps) {
         setIsWatched(true);
       }
       localStorage.setItem('eh_el_moshkla_watched', JSON.stringify(updated));
+    } catch (err) {}
+  };
+
+  // تبديل الحفظ (علامة المفضلة)
+  const toggleBookmark = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const bMarks: any[] = JSON.parse(localStorage.getItem('eh_el_moshkla_bookmarks') || '[]');
+      let updated: any[];
+      if (isBookmarked) {
+        updated = bMarks.filter((b: any) => (typeof b === 'string' ? b !== episode.id : b?.id !== episode.id));
+        setIsBookmarked(false);
+      } else {
+        updated = [episode, ...bMarks.filter((b: any) => (typeof b === 'string' ? b !== episode.id : b?.id !== episode.id))];
+        setIsBookmarked(true);
+      }
+      localStorage.setItem('eh_el_moshkla_bookmarks', JSON.stringify(updated));
+      window.dispatchEvent(new Event('app_storage_updated'));
     } catch (err) {}
   };
 
@@ -101,12 +143,12 @@ export default function EpisodeCard({ episode, index = 0 }: EpisodeCardProps) {
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
 
-        {/* زر تم الاستماع */}
+        {/* زر تم الاستماع (أعلى اليمين) */}
         <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
           <button
             onClick={toggleWatched}
             title={isWatched ? 'إلغاء التحديد' : 'تحديد كـ تم الاستماع'}
-            className={`p-1.5 rounded-full transition-all duration-200 backdrop-blur-md ${
+            className={`p-1.5 rounded-full transition-all duration-200 backdrop-blur-md active:scale-90 ${
               isWatched
                 ? 'bg-emerald-500 text-zinc-950 shadow-lg shadow-emerald-500/20'
                 : 'bg-black/60 text-zinc-400 hover:text-white hover:bg-black/80'
@@ -116,7 +158,26 @@ export default function EpisodeCard({ episode, index = 0 }: EpisodeCardProps) {
           </button>
         </div>
 
-        {/* مدة الحلقة وشارة الموسم */}
+        {/* زر الحفظ الجديد (أعلى اليسار) */}
+        <div className="absolute top-2 left-2 flex items-center gap-1.5 z-10">
+          <button
+            onClick={toggleBookmark}
+            title={isBookmarked ? 'إزالة من المحفوظات' : 'حفظ الحلقة'}
+            className={`p-1.5 rounded-full transition-all duration-200 backdrop-blur-md active:scale-90 ${
+              isBookmarked
+                ? 'bg-amber-400 text-zinc-950 shadow-lg shadow-amber-400/30'
+                : 'bg-black/60 text-zinc-400 hover:text-amber-400 hover:bg-black/80'
+            }`}
+          >
+            {isBookmarked ? (
+              <BookmarkCheck className="w-3.5 h-3.5 stroke-[2.2]" />
+            ) : (
+              <Bookmark className="w-3.5 h-3.5" />
+            )}
+          </button>
+        </div>
+
+        {/* مدة الحلقة بصيغة الساعات والدقائق والثواني */}
         {episode.duration_seconds && (
           <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-[10px] font-mono text-zinc-300 flex items-center gap-1 border border-white/10">
             <Clock className="w-3 h-3 text-amber-400" />

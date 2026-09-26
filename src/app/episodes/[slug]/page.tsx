@@ -36,7 +36,7 @@ export default function EpisodeDetailPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
 
-  // مؤقت النوم اللحظي
+  // مؤقت النوم
   const [sleepTimerMinutes, setSleepTimerMinutes] = useState<number | null>(null);
   const [sleepTimerTimeLeft, setSleepTimerTimeLeft] = useState<number | null>(null);
   const sleepTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -44,7 +44,7 @@ export default function EpisodeDetailPage() {
   const stopAtEndOfVideoRef = useRef(false);
   const [showSleepMenu, setShowSleepMenu] = useState(false);
 
-  // الملاحظات والمحفوظات السحابية
+  // الملاحظات والمحفوظات
   const [notes, setNotes] = useState<{ id: string; timestamp: number; content: string }[]>([]);
   const [newNoteContent, setNewNoteContent] = useState('');
   const [isBookmarked, setIsBookmarked] = useState(false);
@@ -118,57 +118,37 @@ export default function EpisodeDetailPage() {
     if (!episode) return;
     const currentEp = episode;
 
-    async function syncNotesAndBookmarks() {
-      if (user) {
-        try {
-          const { data, error } = await supabase
-            .from('notes')
-            .select('*')
-            .eq('episode_id', currentEp.id)
-            .eq('user_id', user.id)
-            .order('timestamp_seconds', { ascending: true });
+    try {
+      const bMarks: any[] = JSON.parse(localStorage.getItem('eh_el_moshkla_bookmarks') || '[]');
+      const exists = bMarks.some((b: any) => (typeof b === 'string' ? b === currentEp.id : b?.id === currentEp.id));
+      setIsBookmarked(exists);
+    } catch (e) {}
 
-          if (data && !error && data.length > 0) {
-            const formatted = data.map((n: any) => ({
-              id: n.id,
-              timestamp: n.timestamp_seconds ?? n.timestamp ?? 0,
-              content: n.note_text ?? n.content ?? '',
-            }));
-            setNotes(formatted);
-          } else {
-            const savedNotes = JSON.parse(localStorage.getItem(`notes_${currentEp.id}`) || '[]');
-            setNotes(savedNotes);
+    try {
+      const allNotes: any[] = JSON.parse(localStorage.getItem('eh_el_moshkla_notes') || '[]');
+      const epNotes = allNotes.filter((n: any) => n.episode_id === currentEp.id);
+      setNotes(epNotes);
+    } catch (e) {}
+
+    if (user) {
+      supabase
+        .from('notes')
+        .select('*')
+        .eq('episode_id', currentEp.id)
+        .eq('user_id', user.id)
+        .order('timestamp_seconds', { ascending: true })
+        .then(({ data }) => {
+          if (data && data.length > 0) {
+            setNotes(
+              data.map((n: any) => ({
+                id: n.id,
+                timestamp: n.timestamp_seconds ?? 0,
+                content: n.note_text ?? '',
+              }))
+            );
           }
-        } catch (e) {
-          const savedNotes = JSON.parse(localStorage.getItem(`notes_${currentEp.id}`) || '[]');
-          setNotes(savedNotes);
-        }
-      } else {
-        const savedNotes = JSON.parse(localStorage.getItem(`notes_${currentEp.id}`) || '[]');
-        setNotes(savedNotes);
-      }
-
-      if (user) {
-        try {
-          const { data } = await supabase
-            .from('bookmarks')
-            .select('*')
-            .eq('episode_id', currentEp.id)
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-          if (data) {
-            setIsBookmarked(true);
-            return;
-          }
-        } catch (e) {}
-      }
-
-      const bMarks: string[] = JSON.parse(localStorage.getItem('eh_el_moshkla_bookmarks') || '[]');
-      setIsBookmarked(bMarks.includes(currentEp.id));
+        });
     }
-
-    syncNotesAndBookmarks();
   }, [episode, user]);
 
   useEffect(() => {
@@ -358,9 +338,15 @@ export default function EpisodeDetailPage() {
     setIsBookmarked(nextState);
 
     try {
-      const bMarks: string[] = JSON.parse(localStorage.getItem('eh_el_moshkla_bookmarks') || '[]');
-      const updated = nextState ? [...bMarks, currentEp.id] : bMarks.filter((id) => id !== currentEp.id);
+      const bMarks: any[] = JSON.parse(localStorage.getItem('eh_el_moshkla_bookmarks') || '[]');
+      let updated: any[];
+      if (nextState) {
+        updated = [currentEp, ...bMarks.filter((b) => (typeof b === 'string' ? b !== currentEp.id : b?.id !== currentEp.id))];
+      } else {
+        updated = bMarks.filter((b) => (typeof b === 'string' ? b !== currentEp.id : b?.id !== currentEp.id));
+      }
       localStorage.setItem('eh_el_moshkla_bookmarks', JSON.stringify(updated));
+      window.dispatchEvent(new Event('app_storage_updated'));
     } catch (e) {}
 
     if (user) {
@@ -370,9 +356,7 @@ export default function EpisodeDetailPage() {
         } else {
           await supabase.from('bookmarks').delete().eq('user_id', user.id).eq('episode_id', currentEp.id);
         }
-      } catch (err) {
-        console.error('Cloud bookmark error:', err);
-      }
+      } catch (err) {}
     }
   };
 
@@ -393,18 +377,24 @@ export default function EpisodeDetailPage() {
     const seekTime = Math.floor(currentTime);
     const tempId = Date.now().toString();
 
-    const newNote = {
+    const newNoteObj = {
       id: tempId,
+      episode_id: currentEp.id,
+      episode_title: currentEp.title,
+      episode_slug: currentEp.slug || currentEp.youtube_video_id,
+      youtube_video_id: currentEp.youtube_video_id,
       timestamp: seekTime,
       content: noteText,
+      created_at: new Date().toISOString(),
     };
 
-    setNotes((prev) => [newNote, ...prev]);
+    setNotes((prev) => [newNoteObj, ...prev]);
     setNewNoteContent('');
 
     try {
-      const currentLocal = JSON.parse(localStorage.getItem(`notes_${currentEp.id}`) || '[]');
-      localStorage.setItem(`notes_${currentEp.id}`, JSON.stringify([newNote, ...currentLocal]));
+      const allNotes: any[] = JSON.parse(localStorage.getItem('eh_el_moshkla_notes') || '[]');
+      localStorage.setItem('eh_el_moshkla_notes', JSON.stringify([newNoteObj, ...allNotes]));
+      window.dispatchEvent(new Event('app_storage_updated'));
     } catch (e) {}
 
     if (user) {
@@ -424,9 +414,7 @@ export default function EpisodeDetailPage() {
         if (data && !error) {
           setNotes((prev) => prev.map((n) => (n.id === tempId ? { ...n, id: data.id } : n)));
         }
-      } catch (err) {
-        console.error('Cloud note error:', err);
-      } finally {
+      } catch (err) {} finally {
         setIsSavingCloud(false);
       }
     }
@@ -434,21 +422,19 @@ export default function EpisodeDetailPage() {
 
   const handleDeleteNote = async (id: string) => {
     if (!episode) return;
-    const currentEp = episode;
-
     setNotes((prev) => prev.filter((n) => n.id !== id));
 
     try {
-      const currentLocal = JSON.parse(localStorage.getItem(`notes_${currentEp.id}`) || '[]');
-      localStorage.setItem(`notes_${currentEp.id}`, JSON.stringify(currentLocal.filter((n: any) => n.id !== id)));
+      const allNotes: any[] = JSON.parse(localStorage.getItem('eh_el_moshkla_notes') || '[]');
+      const filtered = allNotes.filter((n: any) => n.id !== id);
+      localStorage.setItem('eh_el_moshkla_notes', JSON.stringify(filtered));
+      window.dispatchEvent(new Event('app_storage_updated'));
     } catch (e) {}
 
     if (user) {
       try {
         await supabase.from('notes').delete().eq('id', id);
-      } catch (err) {
-        console.error('Cloud delete error:', err);
-      }
+      } catch (err) {}
     }
   };
 
@@ -484,7 +470,6 @@ export default function EpisodeDetailPage() {
     );
   }
 
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
   const timerActive = sleepTimerMinutes !== null || stopAtEndOfVideo;
 
   return (
@@ -613,7 +598,6 @@ export default function EpisodeDetailPage() {
                 )}
               </button>
 
-              {/* زر مؤقت النوم */}
               <div className="relative">
                 <button
                   onClick={() => setShowSleepMenu(!showSleepMenu)}
@@ -698,7 +682,6 @@ export default function EpisodeDetailPage() {
           </div>
         </div>
 
-        {/* قسم التدوين */}
         <div className="space-y-4 pt-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
