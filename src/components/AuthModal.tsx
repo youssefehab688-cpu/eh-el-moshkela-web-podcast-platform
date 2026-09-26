@@ -1,18 +1,91 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { supabase } from '@/lib/supabase';
 import { X, Sparkles, AlertCircle } from 'lucide-react';
+
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
 
 export default function AuthModal() {
   const { isAuthModalOpen, closeAuthModal } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+  // استقبال توكن الدخول من Google وإرساله إلى Supabase في الخلفية
+  const handleCredentialResponse = useCallback(async (response: any) => {
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: response.credential,
+      });
+
+      if (error) {
+        setErrorMsg(error.message || 'فشل إتمام تسجيل الدخول');
+        setLoading(false);
+      } else {
+        closeAuthModal();
+      }
+    } catch (err: any) {
+      setErrorMsg('حدث خطأ أثناء الاتصال بالخادم');
+      setLoading(false);
+    }
+  }, [closeAuthModal]);
+
+  // تحميل مكتبة Google الرسمية وتهيئة زر تسجيل الدخول المباشر
+  useEffect(() => {
+    if (!isAuthModalOpen || !clientId) return;
+
+    const initGoogle = () => {
+      if (typeof window !== 'undefined' && window.google?.accounts?.id) {
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: handleCredentialResponse,
+        });
+
+        if (googleBtnRef.current) {
+          googleBtnRef.current.innerHTML = '';
+          window.google.accounts.id.renderButton(googleBtnRef.current, {
+            type: 'standard',
+            theme: 'outline',
+            size: 'large',
+            text: 'continue_with',
+            shape: 'pill',
+            width: 340,
+            logo_alignment: 'center',
+            locale: 'ar',
+          });
+        }
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      if (!window.google?.accounts?.id) {
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client?hl=ar';
+        script.async = true;
+        script.defer = true;
+        script.onload = initGoogle;
+        document.body.appendChild(script);
+      } else {
+        initGoogle();
+      }
+    }
+  }, [isAuthModalOpen, clientId, handleCredentialResponse]);
 
   if (!isAuthModalOpen) return null;
 
-  const handleGoogleSignIn = async () => {
+  // خيار احتياطي في حال لم يتم تمرير Client ID في البيئة
+  const handleFallbackGoogleSignIn = async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -74,39 +147,27 @@ export default function AuthModal() {
             </div>
           )}
 
-          {/* زر Google الرسمي */}
-          <button
-            onClick={handleGoogleSignIn}
-            disabled={loading}
-            className="mt-3 flex items-center justify-center gap-3 w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-zinc-200 text-zinc-950 font-black text-xs sm:text-sm transition-all shadow-lg active:scale-95 disabled:opacity-50"
-          >
+          {/* زر Google الرسمي المباشر */}
+          <div className="mt-3 flex flex-col items-center justify-center min-h-[48px] w-full">
             {loading ? (
-              <div className="w-5 h-5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+              <div className="flex items-center justify-center gap-2.5 py-3 w-full rounded-2xl bg-zinc-900 text-zinc-300 text-xs font-bold border border-zinc-800">
+                <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                <span>جاري إتمام تسجيل الدخول...</span>
+              </div>
+            ) : clientId ? (
+              <div ref={googleBtnRef} className="flex justify-center w-full" />
             ) : (
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.87c2.26-2.09 3.67-5.17 3.67-9.15z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.87-3.05c-1.08.72-2.45 1.16-4.06 1.16-3.13 0-5.78-2.11-6.73-4.96H1.27v3.15C3.25 21.32 7.31 24 12 24z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.27 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.61H1.27C.46 8.23 0 10.06 0 12s.46 3.77 1.27 5.39l4-3.15z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.25 2.68 1.27 6.61l4 3.15c.95-2.85 3.6-4.96 6.73-4.96z"
-                />
-              </svg>
+              <button
+                onClick={handleFallbackGoogleSignIn}
+                className="flex items-center justify-center gap-3 w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-zinc-200 text-zinc-950 font-black text-xs sm:text-sm transition-all shadow-lg active:scale-95"
+              >
+                <span>المتابعة باستخدام حساب Google</span>
+              </button>
             )}
-            <span>{loading ? 'جاري الاتصال بـ Google...' : 'المتابعة باستخدام حساب Google'}</span>
-          </button>
+          </div>
 
           <span className="text-[10px] text-zinc-500 text-center mt-1">
-            تسجيل الدخول آمن ومشفر تماماً عبر خوادم Supabase
+            تسجيل دخول آمن ومباشر عبر حساب Google الرسمي
           </span>
         </div>
       </div>
